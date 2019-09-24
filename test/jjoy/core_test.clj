@@ -40,7 +40,9 @@
 
     '([1 2 3] rest) [[2 3]]
     '(1 [2] curry) [[1 2]]
-    '(5 dup [dup 1 >] [1 - dup [*] dip] while drop) [120]))
+    '(5 dup [dup 1 >] [1 - dup [*] dip] while drop) [120]
+
+    '([1 2 3] [1 +] map) [[2 3 4]]))
 
 (comment
   (jj/run (jj/jsonify+load
@@ -54,9 +56,16 @@
     (is (match? {:results {0 [4]}}
                 (jj/run program)))))
 
-#_(deftest multi-spawn+reduce
+(deftest pmap-test
   (let [program (jj/jsonify+load
-                 '{:vocabulary {incrementer ([1] swap prefix [+] spawn)}
-                   :body (3 incrementer join)})]
-    (is (match? {:results {0 [4]}}
+                 '{:vocabulary {incrementer (1 +)}
+                   :body ([1 2 3] [incrementer] pmap)})]
+    (is (match? {:results {0 [[2 3 4]]}}
                 (jj/run program)))))
+
+(deftest unparks
+  (let [program (jj/jsonify+load
+                 '{:body (3 yield +)})
+        state (jj/run program)
+        res (jj/unpark program state 0 [2])]
+    (is (match? {:results {0 [5]}} res))))

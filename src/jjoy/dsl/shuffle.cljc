@@ -61,7 +61,7 @@
 
         :RHSNESTED
         (let [[_ & nested-els] el
-              nested-els' (compile-rhs extractors )]
+              nested-els' (compile-rhs extractors nested-els)]
           (fn [data] (cons (nested-els' data) (next data))))
 
         :REST
@@ -92,12 +92,15 @@
                                  bindings)
                     bindings)
          extractors (ut/map-vals path->extractor bindings)
-         rhs' (compile-rhs extractors rhs)]
+         rhs' (compile-rhs extractors (if reverse?
+                                        (reverse rhs)
+                                        rhs))
+         to-take (inc max-index)]
      (fn [data]
        (if (<= (count data) max-index)
          (throw (ex-info "Not enough elements" {:expected (inc max-index)
                                                 :actual (count data)}))
-         (rhs' data))))))
+         (concat (rhs' (take to-take data)) (drop to-take data)))))))
 
 (defn run
   ([s data] (run s data {}))

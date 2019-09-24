@@ -1,6 +1,7 @@
 (ns jjoy.base
   (:require [jjoy.lib :as lib]
-            [jjoy.utils :as ut]))
+            [jjoy.utils :as ut]
+            [jjoy.dsl.shuffle :as dsl.shuffle]))
 
 (def ^:dynamic *vocabulary*)
 
@@ -25,6 +26,10 @@
   `(fn [{[~a & stack#] :stack :as s#}]
      (assoc s# :stack (cons ~body stack#))))
 
+(defmacro no-args-op [body]
+  `(fn [{:keys [stack#] :as s#}]
+     (assoc s# :stack (cons ~body stack#))))
+
 (def primitive
   {(word "call") (fn [{:keys [p-stack]
                        [q & stack] :stack :as s}]
@@ -36,16 +41,9 @@
                   (assoc s
                          :stack stack
                          :p-stack (concat P [a] p-stack)))
-   (word "dup") (fn [{[q :as stack] :stack :as s}]
-                  (assoc s :stack (cons q stack)))
-   (word "swap") (fn [{[a b & stack] :stack :as s}]
-                   (assoc s :stack (cons b (cons a stack))))
-   (word "drop") (fn [{[a & stack] :stack :as s}]
-                   (assoc s :stack stack))
-   (word "over") (fn [{[y x :as stack] :stack :as s}]
-                   (assoc s :stack (cons x stack)))
-   (word "rot") (fn [{[z y x & stack] :stack :as s}]
-                  (assoc s :stack (cons x (cons z (cons y stack)))))
+   (word "shuffle") (fn [{[p & stack] :stack :as s}]
+                      (assoc s :stack (dsl.shuffle/run p stack {:reverse? true})))
+
    (word "?" ) (fn [{[z y x & stack] :stack :as s}]
                  (if x
                    (assoc s :stack (cons y stack))
@@ -66,8 +64,6 @@
    (word "concat") (binary-op [a b] (vec (concat a b)))
    (word "length") (unary-op [a] (count a))
    (word "subvec") (ternary-op [v start end] (subvec v start end))
-   (word "prefix") (binary-op [v x] (vec (cons x v)))
-   (word "suffix") (binary-op [v x] (conj v x))
 
    (word "prn") (fn [{[x & stack] :stack :as s}]
                   (prn x)
@@ -94,6 +90,7 @@
 (defn tick
   [{[term & p-stack] :p-stack
     :keys [stack] :as s}]
+  ;; (prn "---TICK" s)
   (cond
     (nil? term) (dissoc s :p-stack)
 

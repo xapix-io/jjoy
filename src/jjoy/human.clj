@@ -6,14 +6,14 @@
 (def grammar "
   PROGRAM = DEFINITIONS BODY
   DEFINITIONS = DEFINITION*
-  BODY = (EXPR WHITESPACE+)* EXPR
+  BODY = (EXPR WHITESPACE+)* EXPR WHITESPACE*
   DEFINITION = WORD WHITESPACE+ <'='> WHITESPACE+ BODY WHITESPACE* <';'> WHITESPACE*
   <EXPR> = NUMBER|STRING|ARRAY|OBJECT|NULL|TRUE|FALSE|WORD
   WORD = #'[-+]' | #'[^-\\s\\[\\]{};\"\\d+:,][^\\s\\[\\]{};\":,]*'
-  ARRAY = BRACKET_OPEN EXPR WHITESPACE* (WHITESPACE* EXPR)* BRACKET_CLOSE
+  ARRAY = BRACKET_OPEN WHITESPACE* (EXPR WHITESPACE+)* EXPR WHITESPACE* BRACKET_CLOSE
   <BRACKET_OPEN> = <'['>
   <BRACKET_CLOSE> = <']'>
-  <WHITESPACE> = <#'[\\s:,]+'>
+  <WHITESPACE> = <#'[\\s\\n:,]+'>
   KEY_VALUE_PAIR = (STRING | WORD) WHITESPACE* EXPR
   OBJECT = CURLY_OPEN WHITESPACE* KEY_VALUE_PAIR WHITESPACE* (WHITESPACE* KEY_VALUE_PAIR WHITESPACE*)* CURLY_CLOSE
   <CURLY_OPEN> = <'{'>
@@ -70,11 +70,37 @@
   (insta/parses parser "foo = dip i;" :start :DEFINITION)
   (insta/parses parser "foo = dip i;\n\n bar = dar b; foo.bar")
   (insta/parses parser "-")
-  (jsonify (parser "{foo 1}"))
+  (jsonify (parser "[1 2 3]"))
   (run "dub = dup +; 3 dub")
 
-  (parser "\"foo\\n\"")
+  (parser "[1 2 3]")
   (parser "\"foo\\\\ \"")
   (run '{:vocabulary {dub (dup +)}
          :body (3 dub)})
+
+  (parser "[ \"format\"]")
+
+  (parser "{ url [ \"format\" \"http://samples-dev.ix-io.net/api/users/~d\" \".\"]
+               method \"get\" }")
+
+  (parser "get-vehicles \"data.user-id\" query [get-user \"data.first-name\" query] map {status 200
+   body {user-names [\".\"]}} template
+")
+
+  (jsonify (parser "get-vehicles = { url \"http://samples-dev.ix-io.net/api/vehicles\",
+                   method \"get\" }
+                   http-request \"body\" query;
+  get-user = { url [ \"format\" \"http://samples-dev.ix-io.net/api/users/~d\" \".\"]
+               method \"get\" } template
+             http-request \"body\" query;
+
+get-vehicles
+  \"data.user-id\"
+query
+  [get-user \"data.first-name\" query]
+map
+  {status 200
+   body {user-names [\".\"]}}
+template
+"))
   )

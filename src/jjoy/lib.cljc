@@ -9,18 +9,27 @@
     curry (swap prefix)
     while (swap do concat [ loop ] curry when)
 
-    rest (dup length dup 0 >
-              [1 swap subvec]
-              [drop drop []]
-              if)
+    dup ("a-aa" shuffle)
+    swap ("ab-ba" shuffle)
+    drop ("a-" shuffle)
+    over ("ab-aba" shuffle)
+    rot ("abc-bca" shuffle)
+
+    rest ("[a..b]-[..b]" shuffle)
+    prefix ("ab-[b..a]" shuffle)
+    suffix ("ab-[..ab]" shuffle)
 
     loop ([ call ] keep [ loop ] curry when)
 
     map ([]
-         [overd swap length 0 >]
-         [overd swap 0 nth overd swap call ] while)
-    seq.prefix (over [ over length 1 + ] dip
-                     [ (sequence) [ 1 swap copy-unsafe ] keep ] new-like)})
+         ["abc-abca" shuffle length 0 >]
+         ["[x..a]bc-abcxb" shuffle call
+          "abcx-ab[..cx]" shuffle]
+         while
+         "abc-c" shuffle)
+
+    pmap (["a-[a]" shuffle] [spawn] "abc-[..ba..c]" shuffle map
+          [join] map)})
 
 (defn map2
   ([l f] (map2 [] l f))
@@ -33,18 +42,18 @@
   ;; MAP IMPL
   l-old f l-new
   []
-  ["abc-abcaa" shuffle length 0 >]
-  [0 nth
-   "abc-abca" shuffle call
-   suffix] while
-  "abcd-c" shuffle
+  ["abc-abca" shuffle length 0 >]
+  ["[x..a]bc-abcxb" shuffle call
+   "abcx-ab[..cx]" shuffle]
+  while
+  "abc-c" shuffle
   ;; WHILE IMPL
   swap call when
 
   ;; FACT IMPL
   dup [ dup 1 > ] [ 1 - dup [ * ] dip ] while drop
 
-  5 [dup prn 1 - 0 >] loop 
+  5 [dup prn 1 - 0 >] loop
 
 
   l1 l2
@@ -55,7 +64,7 @@
 
 
   l1 l2 dup 0 nth
-  l1 l2 v vec swap 
+  l1 l2 v vec swap
 
   ...
 

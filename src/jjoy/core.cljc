@@ -13,13 +13,16 @@
 
 (def word base/word)
 
+(def ^:dynamic *current-thread*)
+
 (defn load-program
   ([json-program] (load-program {} json-program))
   ([more-vocabulary {:strs [vocabulary body]}]
    {:vocabulary (merge (ut/map-vals base/make-definition vocabulary)
                        more-vocabulary
                        base/lib
-                       base/primitive)
+                       base/primitive
+                       {(word "current-thread") (base/no-args-op *current-thread*)})
     :body body}))
 
 (defn jsonify+load
@@ -33,7 +36,6 @@
 (def JOIN-WORD (base/word "join"))
 
 (defn tick [{:keys [thread-id threads] :as state}]
-  (prn "---TICK" state)
   (if-let [{[term & p-stack] :p-stack
             :keys [stack joins]} (get threads thread-id)]
     (let [state' (assoc-in state [:threads thread-id :p-stack] p-stack)]
@@ -45,12 +47,16 @@
           (if (seq joins)
             (reduce (fn [{:keys [threads] :as state} joined-thread-id]
                       (if (get threads joined-thread-id)
-                        (tick (-> state
-                                  (update-in [:threads joined-thread-id :stack] #(concat stack %))
-                                  (assoc :thread-id joined-thread-id)))
+                        (do (prn "--CONTINUE JOINED THREAD" joined-thread-id
+                                 {:prepend-stack stack})
+                            (tick (-> state
+                                      (update-in [:threads joined-thread-id :stack] #(concat stack %))
+                                      (assoc :thread-id joined-thread-id))))
                         state)) state' joins)
-            (cond-> state' (seq? stack)
-                    (assoc-in [:results thread-id] stack))))
+            (do
+              (prn "--THREAD FINISHED" thread-id {:result stack})
+              (cond-> state' (seq? stack)
+                      (assoc-in [:results thread-id] stack)))))
 
         (= YIELD-WORD term)
         state'
@@ -58,13 +64,17 @@
         (= SPAWN-WORD term)
         (let [[spawn-p-stack spawn-stack & stack] stack
               next-thread-id (:next-thread-id state)
+              _ (prn "--SPAWN THREAD" next-thread-id {:stack spawn-stack
+                                                      :p-stack spawn-p-stack})
               state' (-> state'
                          (assoc-in [:threads thread-id :stack] (cons next-thread-id stack))
                          (assoc-in [:threads next-thread-id] {:stack spawn-stack
                                                               :p-stack spawn-p-stack})
-                         (assoc :next-thread-id (inc next-thread-id)))]
-          (recur (assoc (tick state')
-                        :thread-id next-thread-id)))
+                         (assoc :thread-id next-thread-id
+                                :next-thread-id (inc next-thread-id))
+                         (tick))]
+          (prn "--CONTINUE AFTER SPAWN" thread-id)
+          (recur (assoc state' :thread-id thread-id)))
 
         (= RESUME-WORD term)
         (let [[resume-thread-id & stack] stack
@@ -76,9 +86,15 @@
 
         (= JOIN-WORD term)
         (let [[join-thread-id & stack] stack]
-          (-> state'
-              (assoc-in [:threads thread-id :stack] stack)
-              (update-in [:threads join-thread-id :joins] conj thread-id)))
+          (if-let [res (get-in state' [:results join-thread-id])]
+            (do (prn "--JOIN TO FINISHED THREAD" thread-id {:join-thread join-thread-id
+                                                            :prepend-stack res})
+                (recur (-> state'
+                           (assoc-in [:threads thread-id :stack] (concat res stack))
+                           (ut/dissoc-in [:results join-thread-id]))))
+            (-> state'
+                (assoc-in [:threads thread-id :stack] stack)
+                (update-in [:threads join-thread-id :joins] conj thread-id))))
 
         (= KILL-WORD term)
         (let [[to-kill-thread-id & stack] stack]
@@ -86,7 +102,12 @@
                      (ut/dissoc-in [:threads to-kill-thread-id])
                      (assoc-in [:threads thread-id :stack] stack))))
 
-        :else (recur (update-in state [:threads thread-id] base/tick))))
+        :else (do
+                (prn "--CALL BASE" {:thread thread-id
+                                    :state (get-in state' [:threads thread-id])})
+                (recur
+                   (binding [*current-thread* thread-id]
+                     (update-in state [:threads thread-id] base/tick))))))
     (dissoc state :thread-id)))
 
 (defn run
@@ -99,6 +120,33 @@
      (binding [base/*vocabulary* (:vocabulary program)]
        (tick state)))))
 
+(defn dump-thread [{:keys [stack p-stack]}]
+  {"stack" stack
+   "p-stack" p-stack})
+
+;; if we introduce References GC should be here
+(defn dump-state [{:keys [thread-id next-thread-id threads]}]
+  {"next-thread-id" next-thread-id
+   "threads" (ut/map-vals dump-thread threads)})
+
+(defn load-thread [{:strs [stack p-stack]}]
+  {:stack stack :p-stack p-stack})
+
+(defn load-state [{:strs [next-thread-id threads]}]
+  {:next-thread-id next-thread-id
+   :threads (ut/map-vals load-thread threads)})
+
+(defn running? [{:keys [threads]}]
+  (< 0 (count threads)))
+
+(defn unpark [program state thread-id prepend-stack]
+  (if (get-in state [:threads thread-id])
+    (let [state' (-> state
+                     (update-in [:threads thread-id :stack] #(concat prepend-stack %))
+                     (assoc :thread-id thread-id))]
+      (binding [base/*vocabulary* (:vocabulary program)]
+        (tick state')))
+    (throw (ex-info "Unknown thread" {:type ::unknown-thread}))))
 
 (comment
   get-vehicles = { url "http://samples-dev.ix-io.net/api/vehicles", method "get" }
