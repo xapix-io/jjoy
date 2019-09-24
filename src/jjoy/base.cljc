@@ -58,6 +58,7 @@
    (word "<") (binary-op [a b] (< a b))
    (word ">") (binary-op [a b] (> a b))
    (word "=") (binary-op [a b] (= a b))
+   (word "not") (unary-op [a] (not a))
 
    (word "vec") (fn [{:keys [stack] :as s}]
                   (assoc s :stack (cons [] stack)))
@@ -108,9 +109,12 @@
                  :p-stack p-stack)))
 
 (defn run
-  [p-stack]
-  (loop [s (tick {:stack ()
-                  :p-stack p-stack})]
-    (if (:p-stack s)
-      (recur (tick s))
-      s)))
+  ([p-stack]
+   (run () p-stack))
+  ([stack p-stack]
+   (binding [*vocabulary* (merge primitive lib)]
+     (loop [s (tick {:stack stack
+                     :p-stack p-stack})]
+       (if (:p-stack s)
+         (recur (tick s))
+         s)))))

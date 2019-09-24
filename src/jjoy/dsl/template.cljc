@@ -1,18 +1,14 @@
 (ns jjoy.dsl.template
   (:require [jjoy.dsl.query :as query]
+            [jjoy.dsl.pattern :as pattern]
             [jjoy.utils :as ut]
-            [clojure.pprint :refer [cl-format]])
+            [clojure.pprint :refer [cl-format]]
+            [jjoy.base :as base])
   (:refer-clojure :exclude [compile]))
-
-(defn compile-format [[format-string & queries]]
-  (let [format-queries (mapv query/compile queries)]
-    (fn [[data]]
-      (apply cl-format nil format-string (map #(% data) format-queries)))))
 
 (defn compile-query [q]
   (let [query (query/compile q)]
     (fn [[data]]
-      (prn "---Q" q data (query data))
       (query data))))
 
 (defn compile-parent-query [n q]
@@ -22,13 +18,45 @@
 
 (declare compile)
 
-(defn compile-for [[q sub-template]]
+(defmulti compile-op (fn [op args] op))
+
+(defmethod compile-op "format" [_ [format-string & queries]]
+  (let [format-queries (mapv query/compile queries)]
+    (fn [[data]]
+      (apply cl-format nil format-string (map #(% data) format-queries)))))
+
+(defmethod compile-op "for" [_ [q sub-template]]
   (let [query (query/compile q)
         sub-template' (compile sub-template)]
     (fn [[data :as stack]]
       (let [items (query data)]
         (for [i items]
           (sub-template' (cons i stack)))))))
+
+(defmethod compile-op "a" [_ sub-templates]
+  (let [sub-templates' (map compile sub-templates)]
+    (fn [data]
+      (for [t sub-templates']
+        (t data)))))
+
+(defmethod compile-op "when" [_ [query expr sub-template]]
+  (let [query' (query/compile query)
+        sub-template' (compile sub-template)]
+    (fn [[data :as stack]]
+      (when (first (:stack (base/run (cons (query' data) stack) expr)))
+        (sub-template' stack)))))
+
+(defmethod compile-op "match" [_ [pattern sub-template]]
+  (let [matcher (pattern/matcher pattern)
+        sub-template' (compile sub-template)]
+    (fn [[data :as stack]]
+      (when-let [bindings (matcher data)]
+        (sub-template' (cons bindings stack))))))
+
+(defmethod compile-op "merge" [_ sub-templates]
+  (let [sub-templates' (map compile sub-templates)]
+    (fn [[data]]
+      (reduce #(ut/deep-merge %1 (%2 data)) {} sub-templates'))))
 
 (defn compile [template]
   (cond
@@ -40,12 +68,11 @@
     (sequential? template)
     (let [[op & args] template]
       (cond
-        (= "format" op) (compile-format args)
         (= \. (nth op 0)) (compile-query (subs op 1))
         (= \^ (nth op 0)) (let [[_ parents query] (re-find #"(\^+)(.+)" op)
                                 n (count parents)]
                             (compile-parent-query n (subs op n)))
-        (= "for" op) (compile-for args)))
+        :else (compile-op op args)))
 
     :else (constantly template)))
 

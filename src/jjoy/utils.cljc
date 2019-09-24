@@ -39,3 +39,9 @@
       (let [res (dissoc m k)]
         (when-not (empty? res)
           res)))))
+;; Deep merge JSON-like data
+(defn deep-merge [a b]
+  (cond
+    (and (map? a) (map? b)) (merge-with deep-merge a b)
+    (and (sequential? a) (sequential? b)) (map deep-merge a b)
+    :else b))

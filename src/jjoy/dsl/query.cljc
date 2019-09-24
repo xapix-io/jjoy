@@ -3,21 +3,41 @@
   (:refer-clojure :exclude [compile]))
 
 (defn deescape [s]
-  (str/replace s #"\\(\.|\\)" "$1"))
+  (str/replace s #"\\(\.|\\|\[)" "$1"))
+
+(defn index-key [k]
+  (when (= \[ (nth k 0))
+    (Long/parseLong (subs k 1 (dec (count k))))))
 
 (defn parse [query]
-  (->> (re-seq #"([^\.\\]|\\[\\\.])+" query)
-       (map (fn [[key]] (deescape key)))))
+  (->> (re-seq #"(([^\.\\\[]|\\[\\\.\[])+)(\[[^\]]+\])?" query)
+       (map (fn [[_ key _ ?index]]
+              (if ?index
+                {:type :indexed-key
+                 :key (deescape key)
+                 :index (index-key ?index)}
+                {:type :key
+                 :key (deescape key)})))))
 
 (defn compile*
-  [[key & query]]
-  (if key
+  [[{:keys [type key] :as sub-query} & query]]
+  (if sub-query
     (let [sub (compile* query)]
-      (fn [data]
-        (let [v (get data key)]
-          (cond
-            (sequential? v) (map sub v)
-            :else (sub v)))))
+      (case type
+        :key
+        (fn [data]
+          (let [v (get data key)]
+            (cond
+              (sequential? v) (map sub v)
+              :else (sub v))))
+
+        :indexed-key
+        (let [index (:index sub-query)]
+          (fn [data]
+            (let [v (get data key)]
+              (when (and (sequential? v)
+                         (< index (count v)))
+                (sub (nth v index))))))))
     identity))
 
 (defn compile [s]
