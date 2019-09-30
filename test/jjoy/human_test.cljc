@@ -27,7 +27,6 @@
 
 (t/deftest vocabulary
   (t/is (= [4]
-           (results-run " dub = dup +; 2 dub")
-           (results-run "dub = dup + ; 2 dub"))))
-
+           (results-run "#def dub dup + ### 2 dub")
+           (results-run "#def dub dup + ### 2 dub"))))
 
