@@ -1,8 +1,8 @@
 (ns jjoy.core
-  (:require [clojure.string :as str]
-            [jjoy.lib :as lib]
-            [jjoy.utils :as ut]
-            [jjoy.base :as base]))
+  (:require [clojure.edn :as edn]
+            [jjoy.base :as base]
+            [jjoy.dsl.template :as dsl.template]
+            [jjoy.utils :as ut]))
 
 (comment
   shuffle lang
@@ -22,7 +22,9 @@
                        more-vocabulary
                        base/lib
                        base/primitive
-                       {(word "current-thread") (base/no-args-op *current-thread*)})
+                       {(word "current-thread") (base/no-args-op *current-thread*)
+                        (word "template") (base/binary-op [data template]
+                                                          (dsl.template/run template data))})
     :body body}))
 
 (defn jsonify+load
@@ -92,9 +94,11 @@
                 (recur (-> state'
                            (assoc-in [:threads thread-id :stack] (concat res stack))
                            (ut/dissoc-in [:results join-thread-id]))))
-            (-> state'
-                (assoc-in [:threads thread-id :stack] stack)
-                (update-in [:threads join-thread-id :joins] conj thread-id))))
+            (do
+              (prn "--JOIN TO THREAD" thread-id {:joined-to join-thread-id})
+              (-> state'
+                  (assoc-in [:threads thread-id :stack] stack)
+                  (update-in [:threads join-thread-id :joins] conj thread-id)))))
 
         (= KILL-WORD term)
         (let [[to-kill-thread-id & stack] stack]
@@ -103,11 +107,11 @@
                      (assoc-in [:threads thread-id :stack] stack))))
 
         :else (do
-                (prn "--CALL BASE" {:thread thread-id
-                                    :state (get-in state' [:threads thread-id])})
+                #_(prn "--CALL BASE" {:thread thread-id
+                                    :state (get-in state [:threads thread-id])})
                 (recur
-                   (binding [*current-thread* thread-id]
-                     (update-in state [:threads thread-id] base/tick))))))
+                 (binding [*current-thread* thread-id]
+                   (update-in state [:threads thread-id] base/tick))))))
     (dissoc state :thread-id)))
 
 (defn run
@@ -120,21 +124,35 @@
      (binding [base/*vocabulary* (:vocabulary program)]
        (tick state)))))
 
-(defn dump-thread [{:keys [stack p-stack]}]
+(defn dump-thread [{:keys [stack p-stack joins results]}]
   {"stack" stack
-   "p-stack" p-stack})
+   "p-stack" p-stack
+   "joins" joins
+   "results" results})
 
 ;; if we introduce References GC should be here
-(defn dump-state [{:keys [thread-id next-thread-id threads]}]
+(defn dump-state [{:keys [thread-id next-thread-id threads results]}]
   {"next-thread-id" next-thread-id
-   "threads" (ut/map-vals dump-thread threads)})
+   "threads" (->> (for [[k v] threads]
+                    [(str k) (dump-thread v)])
+                  (into {}))
+   "results" (->> (for [[k v] results]
+                    [(str k) v])
+                  (into {}))})
 
-(defn load-thread [{:strs [stack p-stack]}]
-  {:stack stack :p-stack p-stack})
+(defn load-thread [{:strs [stack p-stack joins]}]
+  {:stack stack
+   :p-stack p-stack
+   :joins joins})
 
-(defn load-state [{:strs [next-thread-id threads]}]
+(defn load-state [{:strs [next-thread-id threads results]}]
   {:next-thread-id next-thread-id
-   :threads (ut/map-vals load-thread threads)})
+   :threads (->> (for [[k v] threads]
+                   [(edn/read-string k) (load-thread v)])
+                 (into {}))
+   :results (->> (for [[k v] results]
+                   [(edn/read-string k) v])
+                 (into {}))})
 
 (defn running? [{:keys [threads]}]
   (< 0 (count threads)))

@@ -1,9 +1,10 @@
 (ns jjoy.base
   (:require [jjoy.lib :as lib]
             [jjoy.utils :as ut]
-            [jjoy.dsl.shuffle :as dsl.shuffle]))
+            [jjoy.dsl.shuffle :as dsl.shuffle]
+            [jjoy.dsl.query :as dsl.query]))
 
-(def ^:dynamic *vocabulary*)
+(def ^:dynamic *vocabulary* nil)
 
 (def word-prefix \•)
 
@@ -44,6 +45,9 @@
    (word "shuffle") (fn [{[p & stack] :stack :as s}]
                       (assoc s :stack (dsl.shuffle/run p stack {:reverse? true})))
 
+   (word "query") (binary-op [data query]
+                             (dsl.query/run query data))
+
    (word "?" ) (fn [{[z y x & stack] :stack :as s}]
                  (if x
                    (assoc s :stack (cons y stack))
@@ -71,7 +75,8 @@
 
 (defn json-values-walk [f v]
   (cond
-    (map? v) (into {} (map (fn [[k v]] [(f k) ((partial json-values-walk f) v)]) v))
+    (map? v) (into {} (map (fn [[k v]] [(f k)
+                                        ((partial json-values-walk f) v)]) v))
     (sequential? v) (mapv (partial json-values-walk f) v)
     :else (f v)))
 
@@ -109,7 +114,7 @@
   ([p-stack]
    (run () p-stack))
   ([stack p-stack]
-   (binding [*vocabulary* (merge primitive lib)]
+   (binding [*vocabulary* (or *vocabulary* (merge primitive lib))]
      (loop [s (tick {:stack stack
                      :p-stack p-stack})]
        (if (:p-stack s)

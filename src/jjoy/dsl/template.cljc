@@ -39,6 +39,10 @@
       (for [t sub-templates']
         (t data)))))
 
+(defmethod compile-op "call" [_ expr]
+  (fn [stack]
+    (first (:stack (base/run stack expr)))))
+
 (defmethod compile-op "when" [_ [query expr sub-template]]
   (let [query' (query/compile query)
         sub-template' (compile sub-template)]

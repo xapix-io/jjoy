@@ -69,3 +69,15 @@
         state (jj/run program)
         res (jj/unpark program state 0 [2])]
     (is (match? {:results {0 [5]}} res))))
+
+(deftest query
+  (let [program (jj/jsonify+load
+                 '{:body ({:foo 1} "foo" query)})]
+    (is (match? {:results {0 [1]}}
+                (jj/run program)))))
+
+(deftest template
+  (let [program (jj/jsonify+load
+                 '{:body ({:foo 1} {:bar [".foo"]} template)})]
+    (is (match? {:results {0 [{"bar" 1}]}}
+                (jj/run program)))))

@@ -4,18 +4,21 @@
             [instaparse.core :as insta]))
 
 (def grammar "
-  PROGRAM = DEFINITIONS BODY
+  PROGRAM = FFC? DEFINITIONS BODY
+  FFC = WHITESPACE* <'import'> WHITESPACE+ BRACKET_OPEN WHITESPACE* (FFC_ITEM WHITESPACE+)* FFC_ITEM WHITESPACE* BRACKET_CLOSE WHITESPACE+<'from'> WHITESPACE+ WORD WHITESPACE+
+  FFC_ITEM = WORD_WITH_ARITY | BRACKET_OPEN WHITESPACE*  WORD_WITH_ARITY WHITESPACE+ <'as'> WHITESPACE+ WORD WHITESPACE* BRACKET_CLOSE
+  WORD_WITH_ARITY = WORD <'/'> NUMBER
   DEFINITIONS = DEFINITION*
-  BODY = (EXPR WHITESPACE+)* EXPR WHITESPACE*
-  DEFINITION = WORD WHITESPACE+ <'='> WHITESPACE+ BODY WHITESPACE* <';'> WHITESPACE*
+  BODY = WHITESPACE* (EXPR WHITESPACE+)* EXPR WHITESPACE*
+  DEFINITION = WHITESPACE* WORD WHITESPACE+ <'='> WHITESPACE+ BODY <';'>
   <EXPR> = NUMBER|STRING|ARRAY|OBJECT|NULL|TRUE|FALSE|WORD
   WORD = #'[-+]' | #'[^-\\s\\[\\]{};\"\\d+:,][^\\s\\[\\]{};\":,]*'
-  ARRAY = BRACKET_OPEN WHITESPACE* (EXPR WHITESPACE+)* EXPR WHITESPACE* BRACKET_CLOSE
+  ARRAY = BRACKET_OPEN BODY BRACKET_CLOSE
   <BRACKET_OPEN> = <'['>
   <BRACKET_CLOSE> = <']'>
   <WHITESPACE> = <#'[\\s\\n:,]+'>
-  KEY_VALUE_PAIR = (STRING | WORD) WHITESPACE* EXPR
-  OBJECT = CURLY_OPEN WHITESPACE* KEY_VALUE_PAIR WHITESPACE* (WHITESPACE* KEY_VALUE_PAIR WHITESPACE*)* CURLY_CLOSE
+  KEY_VALUE_PAIR = WHITESPACE* (STRING | WORD) WHITESPACE+ EXPR WHITESPACE*
+  OBJECT = CURLY_OPEN KEY_VALUE_PAIR* CURLY_CLOSE
   <CURLY_OPEN> = <'{'>
   <CURLY_CLOSE> = <'}'>
   NUMBER = #'-?(0|([1-9][0-9]*))(\\.[0-9]+)?([eE][+-]?[0-9]+)?'
@@ -49,31 +52,31 @@
     (:NUMBER :STRING) (edn/read-string (first xs))
     :WORD (jj/word (first xs))
     :OBJECT (into {} (map jsonify-keypair xs))
-    :ARRAY (mapv jsonify-expr xs)))
+    :ARRAY (let [[[_ & xs]] xs] (mapv jsonify-expr xs))))
 
 (defn jsonify-body [[_ & exprs]]
   (mapv jsonify-expr exprs))
 
 (defn jsonify-definition [[_ [_ n] body]]
-  [(jj/word n) (let [body' (jsonify-body body)]
-                   (fn [stack program] [stack (concat body' program)]))])
+  [(jj/word n) (jsonify-body body)])
 
 (defn jsonify [[_ [_ & definitions] body]]
-  {:vocabulary (into {} (map jsonify-definition definitions))
-   :body (jsonify-body body)})
+  {"vocabulary" (into {} (map jsonify-definition definitions))
+   "body" (jsonify-body body)})
+
+(defn parse [body] (jsonify (parser body)))
 
 (defn run [program]
-  (let [{:keys [vocabulary body]} (jsonify (parser program))]
-    (jj/run vocabulary body)))
+  (jj/run (jj/load-program (jsonify (parser program)))))
 
 (comment
-  (insta/parses parser "foo = dip i;" :start :DEFINITION)
+  (insta/parses parser "foo/2" :start :WORD_WITH_ARITY)
   (insta/parses parser "foo = dip i;\n\n bar = dar b; foo.bar")
   (insta/parses parser "-")
   (jsonify (parser "[1 2 3]"))
-  (run "dub = dup +; 3 dub")
+  (parse "import []")
 
-  (parser "[1 2 3]")
+  (parser "import [foo/2 bar/2] from clojud")
   (parser "\"foo\\\\ \"")
   (run '{:vocabulary {dub (dup +)}
          :body (3 dub)})

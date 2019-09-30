@@ -51,7 +51,10 @@
 
       ["match" {"users" ["$_" "$_" {"name" "$name"}]}
        {"first-name" [".name"]}]
-      nil)))
+      nil
+
+      ["call" 2 1 (base/word "+")]
+      3)))
 
 ;; TODO
 (comment
