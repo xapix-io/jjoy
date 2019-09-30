@@ -15,6 +15,9 @@
   (and (string? s)
        (= (first s) word-prefix)))
 
+(defn unword [w]
+  (subs w 1))
+
 (defmacro binary-op [[a b] body]
   `(fn [{[~b ~a & stack#] :stack :as s#}]
      (assoc s# :stack (cons ~body stack#))))

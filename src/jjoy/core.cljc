@@ -4,13 +4,6 @@
             [jjoy.dsl.template :as dsl.template]
             [jjoy.utils :as ut]))
 
-(comment
-  shuffle lang
-  "abc-bc"
-  "[a]-a"
-  "..[..a]-..a"
-  )
-
 (def word base/word)
 
 (def ^:dynamic *current-thread*)

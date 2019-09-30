@@ -4,22 +4,9 @@
             [instaparse.core :as insta]))
 
 (def grammar "
-  PROGRAM = PRAGMAS ((DEFINITIONS+ (<'###'> BODY)?) | BODY)
-  PRAGMAS = PRAGMA*
-  <PRAGMA> = IMPORT | USE
-  IMPORT = WHITESPACE* <'#import'> WHITESPACE+ BRACKET_OPEN WHITESPACE* (FFC_ITEM WHITESPACE*)+ BRACKET_CLOSE WHITESPACE+ <'from'> WHITESPACE+ WORD
-  USE = WHITESPACE* <'#use'> WHITESPACE+ BRACKET_OPEN WHITESPACE* (USE_ITEM WHITESPACE*)+ BRACKET_CLOSE
-
-  FFC_ITEM = WORD | FFC_ALIAS
-  FFC_ALIAS = BRACKET_OPEN WHITESPACE* WORD WHITESPACE+ <'as'> WHITESPACE+ WORD WHITESPACE* BRACKET_CLOSE
-  USE_ITEM = WORD USE_AS? USE_REFER?
-  USE_AS = WHITESPACE+ <'as'> WHITESPACE+ WORD
-  USE_REFER = WHITESPACE+ <'refer'> WHITESPACE+ BRACKET_OPEN WHITESPACE* (WORD WHITESPACE*)+ BRACKET_CLOSE
-
-  DEFINITIONS = DEFINITION*
-  DEFINITION = WHITESPACE* <'#def'> WHITESPACE+ WORD WHITESPACE+ BODY
   BODY = EXPR*
-  <EXPR> = WHITESPACE* (NUMBER|STRING|ARRAY|OBJECT|NULL|TRUE|FALSE|WORD|<COMMENT>) WHITESPACE*
+  <EXPR> = WHITESPACE* (NUMBER|STRING|ARRAY|OBJECT|NULL|TRUE|FALSE|WORD|PRAGMA) WHITESPACE*
+  PRAGMA = <'#'> WORD EXPR
   WORD = #'[-+]' | #'[^-\\s\\[\\]{};\"\\d+:,#][^\\s\\[\\]{};\":,]*' | ESCAPED_WORD
   <ESCAPED_WORD> = <'#'> STRING
   ARRAY = BRACKET_OPEN BODY BRACKET_CLOSE
@@ -45,16 +32,32 @@
 ;; #\"([^\"\\]|\\([\"\\/nfnrt])|(u[0-9a-fA-F]{4}))*\"'
 ;; #"-?(0|([1-9][0-9]*))(\\.[0-9]+)?([eE][+-]?[0-9]+)?"
 
-(def parser
+(def reader
   (insta/parser grammar))
 
-(declare jsonify-expr)
+(declare jsonify-expr jsonify-body)
 
 (defn jsonify-keypair [[_ [k-type k] v]]
   [(case k-type
      :WORD k
      :STRING (edn/read-string k))
    (jsonify-expr v)])
+
+(def ^:dynamic *parsing-state*)
+
+(defn set-defs [defs]
+  (assert (map? defs))
+  (doseq [[n body] defs
+          :let [_ (assert (sequential? body))]]
+    (swap! *parsing-state* update :vocabulary assoc (jj/word n) body)))
+
+(defn set-imports [specs]
+  (assert (map? specs))
+  (doseq [[spec word] specs
+          :let [[_ alias fun arity] (re-find #"(.+?)\.(.+)/(\d+)" spec)]]
+    (swap! *parsing-state* update :imports assoc word {"alias" alias
+                                                      "function" fun
+                                                      "arity" (edn/read-string arity)})))
 
 (defn jsonify-expr [[type & xs]]
   (case type
@@ -64,43 +67,47 @@
     (:NUMBER :STRING) (edn/read-string (first xs))
     :WORD (jj/word (first xs))
     :OBJECT (into {} (map jsonify-keypair xs))
-    :ARRAY (let [[[_ & xs]] xs] (mapv jsonify-expr xs))))
+    :ARRAY (let [[body] xs] (jsonify-body body))
+    :PRAGMA (let [[[_ word] e] xs]
+              (let [e' (jsonify-expr e)]
+                (case word
+                  "word" (do (assert (string? e'))
+                             (jj/word e'))
+                  "defs" (do (set-defs e')
+                             ::ignore)
+                  "import" (do (set-imports e')
+                               ::ignore)
+                  "." ::ignore)))))
 
 (defn jsonify-body [[_ & exprs]]
-  (mapv jsonify-expr exprs))
-
-(defn jsonify-definition [[_ [_ n] body]]
-  [(jj/word n) (jsonify-body body)])
-
-(defn parse-pragma [[t & args]]
-  (case t
-    :IMPORT ()
-    :USE))
+  (->> exprs
+       (map jsonify-expr)
+       (filter #(not= ::ignore %))
+       (vec)))
 
 (defn jsonify
-  [input]
-  (let [[pragmas definitions body]
-        (case (count input)
-          4 (let [[_ pragmas [_ & definitions] body] input]
-              [pragmas definitions body])
-          3 (let [[_ pragmas body] input]
-              [pragmas [] body]))]
-    {"vocabulary" (into {} (map jsonify-definition definitions))
-     "body" (jsonify-body body)}))
+  [body]
+  (binding [*parsing-state* (atom {:vocabulary {}})]
+    (let [body (jsonify-body body)]
+      {"imports" (:imports @*parsing-state*)
+       "vocabulary" (:vocabulary @*parsing-state*)
+       "body" body})))
 
-(defn parse [body] (jsonify (parser body)))
+(defn parse [body] (jsonify (reader body)))
 
 (defn run [program]
-  (jj/run (jj/load-program (jsonify (parser program)))))
+  (jj/run (jj/load-program (jsonify (reader program)))))
 
 (comment
   (insta/parses parser "# ad
 " :start :ONE_LINE_COMMENT)
   (insta/parses parser "#import [foo/2 [bar/3 as foo]] from lala")
-  (insta/parses parser "#def dup 1 +")
+  (insta/parses parser "#. \"comment\"")
   (insta/parses parser "foo = dip i;\n\n bar = dar b; foo.bar")
-  (insta/parses parser "-")
-  (jsonify (parser "1"))
+  (insta/parses reader "=")
+  (-> (jsonify (reader (slurp "/Users/prepor/Dropbox/notes/demo/24.09.2019/users.jjoy")))
+      (clojure.pprint/pprint))
+  (jsonify (reader "arr(1).foo"))
   (parse "import []")
 
   (parser "1")
