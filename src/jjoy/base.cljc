@@ -51,6 +51,8 @@
    (word "query") (binary-op [data query]
                              (dsl.query/run query data))
 
+   (word "panic!") (no-args-op (word "panic"))
+
    (word "?" ) (fn [{[z y x & stack] :stack :as s}]
                  (if x
                    (assoc s :stack (cons y stack))

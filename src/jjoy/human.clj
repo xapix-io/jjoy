@@ -3,6 +3,13 @@
             [jjoy.core :as jj]
             [instaparse.core :as insta]))
 
+(defprotocol FS
+  (read-path [this path]))
+
+(defn in-memory-fs [m]
+  (reify FS
+    (read-path [_ path] (get m path))))
+
 (def grammar "
   BODY = EXPR*
   <EXPR> = WHITESPACE* (NUMBER|STRING|ARRAY|OBJECT|NULL|TRUE|FALSE|WORD|PRAGMA) WHITESPACE*
@@ -44,6 +51,7 @@
    (jsonify-expr v)])
 
 (def ^:dynamic *parsing-state*)
+(def ^:dynamic *fs*)
 
 (defn set-defs [defs]
   (assert (map? defs))
@@ -56,8 +64,8 @@
   (doseq [[spec word] specs
           :let [[_ alias fun arity] (re-find #"(.+?)\.(.+)/(\d+)" spec)]]
     (swap! *parsing-state* update :imports assoc word {"alias" alias
-                                                      "function" fun
-                                                      "arity" (edn/read-string arity)})))
+                                                       "function" fun
+                                                       "arity" (edn/read-string arity)})))
 
 (defn jsonify-expr [[type & xs]]
   (case type
@@ -86,14 +94,17 @@
        (vec)))
 
 (defn jsonify
-  [body]
-  (binding [*parsing-state* (atom {:vocabulary {}})]
+  [body {:keys [fs]}]
+  (binding [*parsing-state* (atom {:vocabulary {}})
+            *fs* fs]
     (let [body (jsonify-body body)]
       {"imports" (:imports @*parsing-state*)
        "vocabulary" (:vocabulary @*parsing-state*)
        "body" body})))
 
-(defn parse [body] (jsonify (reader body)))
+(defn parse
+  ([body] (parse body {}))
+  ([body options] (jsonify (reader body) options)))
 
 (defn run [program]
   (jj/run (jj/load-program (jsonify (reader program)))))

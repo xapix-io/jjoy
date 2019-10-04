@@ -3,7 +3,9 @@
 (def lib
   '{keep (over [call] dip)
     if (? call)
+    panic? ([panic] =)
     when (swap [ call ] [ drop ] if)
+    ;; FIXME rename dip2 -> 2dip
     dip2 (swap [dip] dip)
     do (dup dip2)
     curry (swap prefix)
@@ -19,17 +21,25 @@
     prefix ("ab-[b..a]" shuffle)
     suffix ("ab-[..ab]" shuffle)
 
+    first (0 nth)
+
     loop ([ call ] keep [ loop ] curry when)
 
-    map ([]
-         ["abc-abca" shuffle length 0 >]
-         ["[x..a]bc-abcxb" shuffle call
-          "abcx-ab[..cx]" shuffle]
-         while
-         "abc-c" shuffle)
+    each (["ab-aba" shuffle length 0 >]
+          ["[x..a]b-xabb" shuffle dip2]
+          while
+          "ab-" shuffle)
+
+    map ([swap] [dip "ab-[..ba]" shuffle] "abc-[..ba..c]" shuffle
+         []
+         "abc-cab" shuffle
+         each)
+
+    join ("a-[a]" shuffle consume drop
+          dup panic? [panic!] when)
 
     pmap (["a-[a]" shuffle] [spawn] "abc-[..ba..c]" shuffle map
-          [join] map)})
+          [join first] map)})
 
 (defn map2
   ([l f] (map2 [] l f))
