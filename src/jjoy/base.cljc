@@ -34,7 +34,7 @@
   `(fn [{:keys [stack#] :as s#}]
      (assoc s# :stack (cons ~body stack#))))
 
-(def primitive
+(def primitives
   {(word "call") (fn [{:keys [p-stack]
                        [q & stack] :stack :as s}]
                    (assoc s
@@ -73,6 +73,11 @@
    (word "concat") (binary-op [a b] (vec (concat a b)))
    (word "length") (unary-op [a] (count a))
    (word "subvec") (ternary-op [v start end] (subvec v start end))
+
+   (word "seq") (unary-op [v] (seq v))
+   (word "assoc") (ternary-op [v k obj] (assoc obj k v))
+   (word "get") (binary-op [k obj] (get obj k))
+   (word "into") (binary-op [coll target] (into target coll))
 
    (word "prn") (fn [{[x & stack] :stack :as s}]
                   (prn x)
@@ -119,7 +124,7 @@
   ([p-stack]
    (run () p-stack))
   ([stack p-stack]
-   (binding [*vocabulary* (or *vocabulary* (merge primitive lib))]
+   (binding [*vocabulary* (or *vocabulary* (merge primitives lib))]
      (loop [s (tick {:stack stack
                      :p-stack p-stack})]
        (if (:p-stack s)

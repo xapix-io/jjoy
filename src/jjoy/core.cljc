@@ -8,27 +8,37 @@
 
 (def ^:dynamic *current-thread*)
 
-(defn load-program
-  ([json-program] (load-program {} json-program))
-  ([more-vocabulary {:strs [vocabulary body]}]
-   {:vocabulary (merge (ut/map-vals base/make-definition vocabulary)
-                       more-vocabulary
-                       base/lib
-                       base/primitive
-                       {(word "current-thread") (base/no-args-op *current-thread*)
-                        (word "template") (base/binary-op [data template]
-                                                          (dsl.template/run template data))})
-    :body body}))
-
-(defn jsonify+load
-  ([form-program] (jsonify+load {} form-program))
-  ([more-vocabulary form-program] (load-program more-vocabulary (base/jsonify form-program))))
+(defn no-implementation [& _]
+  (assert false))
 
 (def YIELD-WORD (base/word "yield"))
 ;; (def RESUME-WORD (base/word "resume"))
 (def SPAWN-WORD (base/word "spawn"))
 (def KILL-WORD (base/word "kill"))
 (def CONSUME-WORD (base/word "consume"))
+
+(def primitives
+  {(word "current-thread") (base/no-args-op *current-thread*)
+   (word "template") (base/binary-op [data template]
+                                     (dsl.template/run template data))
+   YIELD-WORD no-implementation
+   SPAWN-WORD no-implementation
+   KILL-WORD no-implementation
+   CONSUME-WORD no-implementation})
+
+(defn load-program
+  ([json-program] (load-program {} json-program))
+  ([more-vocabulary {:strs [vocabulary body]}]
+   {:vocabulary (merge (ut/map-vals base/make-definition vocabulary)
+                       more-vocabulary
+                       base/lib
+                       base/primitives
+                       primitives)
+    :body body}))
+
+(defn jsonify+load
+  ([form-program] (jsonify+load {} form-program))
+  ([more-vocabulary form-program] (load-program more-vocabulary (base/jsonify form-program))))
 
 (declare tick)
 

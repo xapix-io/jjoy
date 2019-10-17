@@ -46,7 +46,8 @@
     '(5 dup [dup 1 >] [1 - dup [*] dip] while drop) [120]
     '(0 [1 2 3] [+] each) [6]
 
-    '([1 2 3] [1 +] map) [[2 3 4]]))
+    '([1 2 3] [1 +] map) [[2 3 4]]
+    '({"a" 1 "b" 2} seq [1 nth 1 +] map) [[2 3]]))
 
 (comment
   (jj/run (jj/jsonify+load

@@ -29,6 +29,13 @@
     :else
     (for-map [[k v] m] k (f v))))
 
+(defn map-keys
+  "Build map (f k) -> v for [k v] in map m"
+  [f m]
+  (if (map? m)
+    (persistent! (reduce-kv (fn [out-m k v] (assoc! out-m (f k) v)) (transient {}) m))
+    (for-map [[k v] m] (f k) v)))
+
 (defn dissoc-in
   "Dissociate this keyseq from m, removing any empty maps created as a result
    (including at the top-level)."
