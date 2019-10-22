@@ -1,319 +1,299 @@
 (ns jjoy.human
+  (:refer-clojure :exclude [read])
   (:require [clojure.edn :as edn]
+            [clojure.string :as str]
+            [clojure.walk :as walk]
             [jjoy.core :as jj]
-            [instaparse.core :as insta]
-            [jjoy.base :as base]
-            [jjoy.utils :as ut]
-            [clojure.string :as str])
-  (:refer-clojure :exclude [read]))
+            [jjoy.utils :as ut])
+  (:import [java.io PushbackReader StringReader]))
 
 (defprotocol FS
-  (read-path [this path]))
+  (read-ns [this ns]))
 
 (defn in-memory-fs [m]
   (reify FS
-    (read-path [_ path] (get m path))))
-
-(def init-env (->> (for [[k] (concat jj/primitives base/primitives)]
-                     [k {:type :primitive
-                         :fully-qualified k}])
-                   (into {})))
-
-(def grammar "
-  BODY = EXPR*
-  <EXPR> = WHITESPACE* (NUMBER|STRING|ARRAY|OBJECT|NULL|TRUE|FALSE|WORD) WHITESPACE*
-  WORD = #'[-+]' | #'[^-\\s\\[\\]{};\"\\d+:,][^\\s\\[\\]{};\":,]*' | ESCAPED_WORD
-  <ESCAPED_WORD> = <'#'> STRING
-  ARRAY = BRACKET_OPEN BODY BRACKET_CLOSE
-  COMMENT = ONE_LINE_COMMENT | MULTI_LINE_COMMENT
-  ONE_LINE_COMMENT = #'# [^\\n]*' | #'#\\n|\\z'
-  MULTI_LINE_COMMENT = '##' (#'.' | '\\n')+ '##'
-  <BRACKET_OPEN> = <'['>
-  <BRACKET_CLOSE> = <']'>
-  <WHITESPACE> = <#'[\\s:,]+'>
-  KEY_VALUE_PAIR = WHITESPACE* (STRING | WORD) WHITESPACE+ EXPR WHITESPACE*
-  OBJECT = CURLY_OPEN KEY_VALUE_PAIR* CURLY_CLOSE
-  <CURLY_OPEN> = <'{'>
-  <CURLY_CLOSE> = <'}'>
-  NUMBER = #'-?(0|([1-9][0-9]*))(\\.[0-9]+)?([eE][+-]?[0-9]+)?'
-  STRING = #'\"([^\"\\\\]|(\\\\[\"\\\\nfnrt]))*\"'
-
-  NULL = <'null'>
-  TRUE = <'true'>
-  FALSE = <'false'>
-  ")
-;; STRING = #'\"[^\"]+\"'
-;; STRING = #'\"([^\"\\]|\\([\"\\/nfnrt])|(u[0-9a-fA-F]{4}))*\"'
-;; #\"([^\"\\]|\\([\"\\/nfnrt])|(u[0-9a-fA-F]{4}))*\"'
-;; #"-?(0|([1-9][0-9]*))(\\.[0-9]+)?([eE][+-]?[0-9]+)?"
-
-(def reader*
-  (insta/parser grammar))
-
-#_(case word
-    "word" (do (assert (string? e'))
-               (jj/word e'))
-    "defs" (do (set-defs e')
-               ::ignore)
-    "import" (do (set-imports e')
-                 ::ignore)
-    "." ::ignore)
-
-(declare read-expr read-body)
-
-(defn read-keypair [[_ [k-type k] v]]
-  [(case k-type
-     :WORD k
-     :STRING (edn/read-string k))
-   (read-expr v)])
-
-(defn read-expr [[type & xs]]
-  (case type
-    :TRUE true
-    :FALSE false
-    :NULL nil
-    (:NUMBER :STRING) (edn/read-string (first xs))
-    :WORD (jj/word (first xs))
-    :OBJECT (into {} (map read-keypair xs))
-    :ARRAY (let [[body] xs] (read-body body))))
-
-(defn read-body [[_ & exprs]]
-  (mapv read-expr exprs))
+    (read-ns [_ ns] (get m ns))))
 
 (defn read [s]
-  (-> s (reader*) (read-body)))
-
-(defn pragma? [s]
-  (and (base/word? s)
-       (= (second s) \#)))
+  (let [reader (PushbackReader. (StringReader. s))]
+    (letfn [(f []
+              (when-let [v (edn/read {:eof nil
+                                      :readers {'word (fn [x] {::word x})}}
+                                     reader)]
+                (cons v (f))))]
+      (f))))
 
 (defn resolve-word [{:keys [env]} word]
-  (or (get-in env [word :fully-qualified])
-      (assert (contains? env word) (str "Unknown word " (base/unword word)))))
+  (let [s (or (get-in env [word :fully-qualified])
+              (assert (contains? env word) (str "Unknown word " word)))]
+    (jj/word (str s))))
 
-(declare analyze*)
+(declare analyze)
 
-(defn handle-import [ctx specs]
-  (let [specs' (map (fn [[spec word]]
-                      (let [_ (assert (base/word? word))
-                            [_ alias fun arity] (re-find #"(.+?)/(.+)/(\d+)" spec)]
-                        {"word" word
-                         "imported-word" (jj/word (str "_imports/" alias "/" fun "/" arity))
-                         "alias" alias
-                         "function" fun
-                         "arity" (edn/read-string arity)}))
-                    specs)]
-    (-> ctx
-        (update :imports into specs')
-        (update :env merge (->> (for [{:strs [word imported-word] :as x} specs']
-                                  [word {:type :import
-                                         :fully-qualified imported-word
-                                         :import x}])
-                                (into {}))))))
+(defmulti parser (fn [{:keys [state]} term] state))
 
-(defn load-lib [{:keys [fs libs-cache]} path]
-  (if-let [lib (get @libs-cache path)]
+(defn syntax-error [& args]
+  (throw (Exception. (str "Syntax error: " (pr-str args)))))
+
+(defn parse-value [{:keys [env] :as s} v]
+  (cond
+    (symbol? v) (resolve-word s v)
+    (map? v) (->> (for [[k v] v]
+                    [(cond
+                       (string? k) k
+                       (symbol? k) (str k)
+                       :else (syntax-error "Unsupported type of object field" k))
+                     (parse-value s v)])
+                  (into {}))
+    (sequential? v) (mapv (partial parse-value s) v)
+    (or (string? v)
+        (number? v)
+        (boolean? v)
+        (nil? v)) v
+    :else (syntax-error "Unsupported value type" v)))
+
+(defmethod parser :consume
+  [s term]
+  (cond
+    (keyword? term) (assoc s :state term)
+    :else (update s :body #(conj % (parse-value s term)))))
+
+(defn load-lib [{:keys [fs libs-cache]} ns]
+  (if-let [lib (get @libs-cache ns)]
     lib
-    (let [content (read-path fs path)
-          _ (assert content (str "Unknown lib by path " path))]
-      (let [res (analyze* {:fs fs
-                           :libs-cache libs-cache
-                           :state :consume
-                           :env init-env
-                           :imports #{}}
-                          (read content))]
-        (swap! libs-cache assoc path res)
+    (let [content (read-ns fs ns)
+          _ (assert content (str "Unknown lib by ns " ns))]
+      (let [res (analyze {:fs fs
+                          :libs-cache libs-cache
+                          :state :consume
+                          :ns ns
+                          :imports #{}}
+                         (read content))]
+        (swap! libs-cache assoc ns res)
         res))))
 
-(defn handle-use* [ctx spec]
-  (let [[path options]
+(defn parser-use [ctx spec]
+  (let [[ns options]
         (cond
-          (base/word? spec)
-          [(base/unword spec) {"as" spec}]
+          (symbol? spec)
+          [spec {"as" spec}]
 
           (sequential? spec)
-          (let [[path-word & args] spec]
-            [(base/unword path-word)
-             (into {} (map (fn [[k v]] [(base/unword k) v])
+          (let [[ns & args] spec]
+            [ns
+             (into {} (map (fn [[k v]] [(name k) v])
                            (partition 2 args)))]))
 
-        {:keys [imports definitions] :as lib} (load-lib ctx path)
-        definitions' (->>
-                      (for [[w def] definitions]
-                        [(jj/word (str path "/" (base/unword w)))
-                         (assoc def :library path)])
-                      (into {}))
+        {:keys [definitions] :as lib} (load-lib ctx ns)
         mapping (cond->
                     {}
                   (get options "as")
                   (into
-                   (for [[w {:keys [name]}] definitions']
-                     [(jj/word (str (base/unword (get options "as")) "/"
-                                    (base/unword name)))
+                   (for [[w d] definitions]
+                     [(symbol (name (get options "as")) (get d "name"))
                       w]))
 
                   (get options "refer")
                   (into
-                   (if (= (get options "refer") (jj/word "all"))
-                     (for [[w {:keys [name]}] definitions']
-                       [name w])
-                     (for [w (get options "refer")]
-                       (do (assert (get definitions w) (str "Unknown word " w " in library " path))
-                           [w (jj/word (str path "/"
-                                            (base/unword w)))])))))]
+                   (if (= (get options "refer") 'all)
+                     (for [[w d] definitions]
+                       [(symbol (get d "name")) w])
+                     (for [w (get options "refer")
+                           :let [target (symbol (name ns) (name w))]]
+                       (do (assert (get definitions target) (str "Unknown word " w " in library " ns))
+                           [w target])))))]
     (-> ctx
-        (update :imports into imports)
-        (update :definitions merge definitions')
+        (update :definitions merge definitions)
         (update :env merge (ut/map-vals (fn [w] {:type :library
-                                                 :library path
+                                                 :ns ns
                                                  :fully-qualified w})
-                                        mapping)))))
+                                        mapping))
+        (assoc :state :consume))))
 
-(defn handle-use [ctx specs]
-  (reduce handle-use* ctx specs))
+(defmethod parser :use
+  [ctx specs]
+  (reduce parser-use ctx specs))
 
-(defmulti pragma :id)
+(defn parse-seq [s seq]
+  (reduce parser (assoc s
+                        :body []
+                        :state :consume)
+          seq))
 
-(defmethod pragma :default [{:keys [expr id]}]
-  [(base/json-values-walk #(if (base/word? %) (base/unword %) %) expr) (jj/word id)])
+(defmethod parser :def
+  [ctx expr]
+  (cond
+    (symbol? expr)
+    (assoc-in ctx [:def "name"] (name expr))
 
-(defn pragmaexpand [ctx x]
-  (update ctx :body (fnil #(apply conj %1 %2) []) (pragma x)))
+    (string? expr)
+    (assoc-in ctx [:def "doc"] expr)
 
-(defn analyze-expr [ctx expr]
-  ;; (prn "---CTX" ctx)
-  (case (:state ctx)
-    :consume (condp = expr
-               (jj/word "#import")
-               (assoc ctx :state :import)
+    (map? expr)
+    (update-in ctx [:def "options"] merge expr)
 
-               (jj/word "#def")
-               (assoc ctx :state :def)
+    (sequential? expr)
+    (let [def (:def ctx)
+          sym (symbol (name (:ns ctx)) (get def "name"))
+          ctx' (-> ctx
+                   (dissoc :def)
+                   (assoc :state :consume)
+                   (assoc :body [])
+                   (assoc-in [:env (symbol (get def "name"))]
+                             {:type :def
+                              :fully-qualified sym}))
+          ctx'' (parse-seq ctx' expr)
+          def' {"type" "words"
+                ;; FIXME do not allow imports / defs inside body def
+                "body" (:body ctx'')}]
+      (-> ctx''
+          (assoc :body (:body ctx))
+          (assoc-in [:definitions sym] def')))))
 
-               (jj/word "#declare")
-               (assoc ctx :state :declare)
+(defn instruction-body-words [ctx form]
+  (if-let [w (and (map? form)
+                  (::word form))]
+    (tagged-literal 'word (jj/unword (resolve-word ctx w)))
+    form))
 
-               (jj/word "#use")
-               (assoc ctx :state :use)
+(defmethod parser :definstruction-body
+  [ctx expr]
+  (let [def (:def ctx)
+        sym (symbol (name (:ns ctx)) (get def "name"))
+        ctx' (-> ctx
+                 (dissoc :def)
+                 (assoc :state :consume)
+                 (assoc :body [])
+                 (assoc-in [:env (symbol (get def "name"))]
+                           {:type :instruction
+                            :fully-qualified sym}))
+        def' {"type" "instruction"
+              "fn" (pr-str (list 'fn (get def "bindings")
+                                 (walk/prewalk (partial instruction-body-words ctx) expr)))}]
+    (-> ctx'
+        (assoc-in [:definitions sym] def'))))
 
-               (if (pragma? expr)
-                 (assoc ctx
-                        :state :pragmaexpand
-                        :pragma (subs expr 2))
-                 (let [v (if (base/word? expr)
-                           ;; TODO add dead code elimination
-                           (resolve-word ctx expr)
-                           expr)]
-                   (update ctx :body (fnil conj []) v))))
-    :import (let [_ (assert (map? expr))]
-              (-> (handle-import ctx expr)
-                  (assoc :state :consume)))
-    :pragmaexpand (-> (pragmaexpand ctx {:id (:pragma ctx)
-                                         :expr expr})
-                      (dissoc :pragma)
-                      (assoc :state :consume))
-    :def (do (assert (jj/word expr))
-             (assoc ctx
-                    :def {:name expr}
-                    :state :def-body))
-    :def-body (cond
-                (and (not (base/word? expr))
-                     (string? expr))
-                (assoc-in ctx [:def :doc] expr)
+(defmethod parser :definstruction
+  [ctx expr]
+  (cond
+    (symbol? expr)
+    (assoc-in ctx [:def "name"] (name expr))
 
-                (map? expr)
-                (update-in ctx [:def :options] merge expr)
+    (string? expr)
+    (assoc-in ctx [:def "doc"] expr)
 
-                (sequential? expr)
-                (let [{:keys [name] :as def} (:def ctx)
-                      ctx' (-> ctx
-                               (dissoc :def)
-                               (assoc :state :consume)
-                               (assoc-in [:env name] {:type :def
-                                                      :fully-qualified name}))
-                      def' (assoc def
-                                  ;; FIXME do not allow imports / defs inside body def
-                                  :body (:body (analyze* ctx' expr)))]
-                  (assoc-in ctx' [:definitions name] def')))
+    (map? expr)
+    (update-in ctx [:def "options"] merge expr)
 
-    :use (let [_ (assert (sequential? expr))]
-           (-> (handle-use ctx expr)
-               (assoc :state :consume)))
+    (vector? expr)
+    (-> ctx
+        (assoc :state :definstruction-body)
+        (assoc-in [:def "bindings"] expr))))
 
-    :declare (let [_ (assert (base/word? expr))]
-               (-> ctx
-                   (assoc-in [:env expr] {:type :declare
-                                          :fully-qualified expr})))))
+(defmethod parser :defclj-body
+  [ctx expr]
+  (let [def (:def ctx)
+        sym (symbol (name (:ns ctx)) (get def "name"))
+        ctx' (-> ctx
+                 (dissoc :def)
+                 (assoc :state :consume)
+                 (assoc :body [])
+                 (assoc-in [:env (symbol (get def "name"))]
+                           {:type :defclj
+                            :fully-qualified sym}))
+        bindings (get def "bindings")
+        _ (assert (not (contains? (set bindings) '&)))
+        def' {"type" "clojure"
+              "arity" (count bindings)
+              "fn" (pr-str (list 'fn bindings expr))}]
+    (-> ctx'
+        (assoc-in [:definitions sym] def'))))
 
-(defn analyze* [ctx body]
-  (reduce analyze-expr ctx body))
+(defmethod parser :defclj
+  [ctx expr]
+  (cond
+    (symbol? expr)
+    (assoc-in ctx [:def "name"] (name expr))
+
+    (string? expr)
+    (assoc-in ctx [:def "doc"] expr)
+
+    (map? expr)
+    (update-in ctx [:def "options"] merge expr)
+
+    (vector? expr)
+    (-> ctx
+        (assoc :state :defclj-body)
+        (assoc-in [:def "bindings"] expr))))
+
+(defmethod parser :declare
+  [ctx expr]
+  (assert (symbol? expr))
+  (let [sym (symbol (name (:ns ctx)) (name expr))]
+    (-> ctx
+        (assoc :state :consume)
+        (assoc-in [:env expr]
+                  {:type :def
+                   :fully-qualified sym}))))
+
+(defmethod parser :import
+  [ctx specs]
+  (let [import-symbol (fn [imported-name arity]
+                        (symbol "jjoy.import"
+                                (str (str/replace (str imported-name) #"/" ".")
+                                     "-" arity)))
+        defs (->> (map (fn [[[imported-name arity] _]]
+                         [(import-symbol imported-name arity)
+                          {"type" "ff"
+                           "name" (str imported-name)
+                           "arity" arity}])
+                       specs)
+                  (into {}))
+        envs (->> (map (fn [[[imported-name arity] sym]]
+                         (let [_ (assert (symbol? sym))]
+                           [sym
+                            {:type :import
+                             :fully-qualified (import-symbol imported-name arity)}]))
+                       specs)
+                  (into {}))]
+    (-> ctx
+        (assoc :state :consume)
+        (update :definitions merge defs)
+        (update :env merge envs))))
 
 (defn analyze
-  [body {:keys [fs]}]
-  (let [{:keys [definitions body imports]} (analyze* {:fs fs
-                                                      :libs-cache (atom {})
-                                                      :state :consume
-                                                      :env init-env
-                                                      :imports #{}}
-                                                     body)]
-    {"imports" imports
-     "vocabulary" (->> (for [[word {:keys [body]}] definitions]
-                         [word body])
-                       (into {}))
-     "body" body}))
+  ([body] (analyze body {:env {}
+                         :ns 'main
+                         :definitions {}}))
+  ([body ctx] (parse-seq ctx body)))
 
-#_(defn read
-    [body {:keys [fs]}]
-    (binding [*parsing-state* (atom {:vocabulary {}})
-              *fs* fs]
-      (let [body (read-body body)]
-        {"imports" (:imports @*parsing-state*)
-         "vocabulary" (:vocabulary @*parsing-state*)
-         "body" body})))
+(defn to-core [{:keys [body definitions]}]
+  {"definitions" (ut/map-keys str definitions)
+   "body" body})
 
-(def ^:dynamic *parsing-state*)
-(def ^:dynamic *fs*)
-
-#_(defn set-defs [defs]
-    (assert (map? defs))
-    (doseq [[n body] defs
-            :let [_ (assert (sequential? body))]]
-      (swap! *parsing-state* update :vocabulary assoc (jj/word n) body)))
-
-#_(defn set-imports [specs]
-    (assert (map? specs))
-    (doseq [[spec word] specs
-            :let [[_ alias fun arity] (re-find #"(.+?)\.(.+)/(\d+)" spec)]]
-      (swap! *parsing-state* update :imports assoc word {"alias" alias
-                                                         "function" fun
-                                                         "arity" (edn/read-string arity)})))
-
-
-
-(defn parse
-  ([body] (parse body {}))
-  ([body options] (analyze (read body) options)))
-
-#_(defn run [program]
-    (jj/run (jj/load-program (jsonify (reader program)))))
+#_(defn handle-import [ctx specs]
+    (let [specs' (map (fn [[spec word]]
+                        (let [_ (assert (base/word? word))
+                              [_ alias fun arity] (re-find #"(.+?)/(.+)/(\d+)" spec)]
+                          {"word" word
+                           "imported-word" (jj/word (str "_imports/" alias "/" fun "/" arity))
+                           "alias" alias
+                           "function" fun
+                           "arity" (edn/read-string arity)}))
+                      specs)]
+      (-> ctx
+          (update :imports into specs')
+          (update :env merge (->> (for [{:strs [word imported-word] :as x} specs']
+                                    [word {:type :import
+                                           :fully-qualified imported-word
+                                           :import x}])
+                                  (into {}))))))
 
 (comment
-  (print (-> "#import {\"codecs/html-encode/2\" html-encode} #def dub [\"a-aa\" shuffle +] 2 dub"
-             (read) (analyze {})))
-
-  (print (-> "#import {\"codecs/html-encode/2\" html-encode} 1 html-encode"
-             (read) (analyze {})))
-
-  (print (-> "#refer [utils/incrementer [utils/incrementer as incr refer [inc]]]
-              utils/incrementer/inc incr/inc inc"
-             (read) (analyze {:fs (in-memory-fs {"utils/incrementer" "#def inc [1 +]"})})))
-
-  (print (-> "#refer [[lib1 refer [inc]]]
-              #def foo [#refer [[lib2 refer [inc]]] inc]
-              inc"
-             (read) (analyze {:fs (in-memory-fs {"lib1" "#def inc [1]"
-                                                 "lib2" "#def inc [2]"})})))
-
-  (print (-> "#template [foo bar]"
-             (read) (analyze {})))
+  (-> (pr-str :def 'zwei-drei [2 3]
+              :import '{[clojure.core/into 2] into}
+              :definstruction 'identity '[s] '(do s {::word into})
+              :defclj 'plus '[a b] '(+ a b)
+              'zwei-drei 'plus)
+      (read) (analyze) (to-core))
   )

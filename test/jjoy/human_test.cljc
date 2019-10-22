@@ -1,90 +1,100 @@
 (ns jjoy.human-test
-  #?@
-  (:clj
-   [(:require
-     [clojure.test :as t]
-     [jjoy.base :as jj]
-     [jjoy.human :as human])]
-   :cljs
-   [(:require
-     [cljs.test :as t :include-macros true]
-     [jjoy.base :as jj]
-     [jjoy.human :as human])]))
+  (:require
+   [clojure.test :refer [deftest is testing]]
+   [jjoy.core :as jj]
+   [jjoy.human :as human]))
 
-;; (defn results-run [program]
-;;   (get-in (human/run program) [:results 0]))
+(defn main-run* [program]
+  (-> program
+      (human/read)
+      (human/analyze)
+      (human/to-core)
+      (jj/load-program)
+      (jj/run)
+      (get-in [:threads 0 :stack])))
 
-(defn body-parse [body]
-  (get (human/parse body) "body"))
+(defmacro main-run [& forms]
+  `(main-run* ~(apply pr-str forms)))
 
-(t/deftest basic
-  (t/is (= [2 1 "•+"] (body-parse "2 1 +")))
-  (t/testing "object"
-    (t/is (= [{"foo" 2}]
-             (body-parse "{foo 2}")
-             (body-parse "{\"foo\" 2}")
-             (body-parse "{\"foo\": 2}")))
+(deftest basic
+  (is (= [[3] 1 2] (main-run 2 1 [3]))))
 
-    (t/is (= [{"foo" 2
-               "bar" 3}]
-             (body-parse "{foo 2 bar 3}")
-             (body-parse "{foo: 2, bar: 3}"))))
+(deftest clj
+  (is (= [3]
+         (main-run
+          :defclj + [a b] (+ a b)
+          1 2 +))))
 
-  (t/testing "array"
-    (t/is (= [[1 2 3]]
-             (body-parse "[1 2 3]")
-             (body-parse "[ 1 2 3 ]")
-             (body-parse "[ 1, 2 3 ]"))))
+(deftest imports
+  (is (= [4]
+         (main-run
+          :import {[clojure.core/+ 2] +
+                   [clojure.core/- 2] -}
+          1 5 2 - +))))
 
-  ;; (t/testing "comments"
-  ;;   (t/is (= [1]
-  ;;            (body-parse "# hey\n 1"))))
+(deftest instructions
+  (is (= [[2 3 4]]
+         (main-run
+          :declare map-step
+          :definstruction map-acc
+          [{[res & stack] :stack
+            [acc & r-stack] :r-stack}]
+          {:stack stack
+           :r-stack (concat [{::human/word map-step} (conj acc res)] r-stack)}
 
-  ;; (t/testing "word pragma"
-  ;;   (t/is (= [3]
-  ;;            (results-run "1 2 #word \"+\""))))
+          :definstruction map-step
+          [{:keys [stack]
+            [acc [x & source] p & r-stack] :r-stack}]
+          (if x
+            {:stack (cons x stack)
+             :r-stack (concat p [{::human/word map-acc} acc source p] r-stack)}
+            {:stack (cons acc stack)
+             :r-stack r-stack})
 
-  ;; (t/testing "ignore pragma"
-  ;;   (t/is (= [3]
-  ;;            (results-run "1 #. ololo 2 +"))))
-  )
+          :definstruction map [{[p l & stack] :stack :keys [r-stack]}]
+          {:stack stack
+           :r-stack (concat [{::human/word map-step} [] l p] r-stack)}
 
+          :import
+          {[clojure.core/+ 2] +}
 
-(t/deftest vocabulary
-  (t/is (= {"•inc" [1 "•+"]
-            "•dec" [1 "•-"]}
-           (get (human/parse "#def inc [1 +] #def dec [1 -]") "vocabulary"))))
+          [1 2 3] [1 +] map))))
 
-(t/deftest imports
-  (t/is (= #{{"word" "•json.encode",
-              "imported-word" "•_imports/codecs/json.encode/2",
-              "alias" "codecs",
-              "function" "json.encode",
-              "arity" 2}}
-           (get (human/parse "#import {\"codecs/json.encode/2\" json.encode}")
-                "imports"))))
+;; (t/deftest vocabulary
+;;   (t/is (= {"•inc" [1 "•+"]
+;;             "•dec" [1 "•-"]}
+;;            (get (human/parse "#def inc [1 +] #def dec [1 -]") "vocabulary"))))
 
-(t/deftest uses
-  (t/is (= ["•utils/incrementer/inc"
-            "•utils/incrementer/inc"
-            "•utils/incrementer/inc"]
-           (get (human/parse
-                 "#use [utils/incrementer [utils/incrementer as incr refer all]]
-                  utils/incrementer/inc incr/inc inc"
-                 {:fs (human/in-memory-fs {"utils/incrementer" "#def inc [1 +]"})})
-                "body")))
+;; (t/deftest imports
+;;   (t/is (= #{{"word" "•json.encode",
+;;               "imported-word" "•_imports/codecs/json.encode/2",
+;;               "alias" "codecs",
+;;               "function" "json.encode",
+;;               "arity" 2}}
+;;            (get (human/parse "#import {\"codecs/json.encode/2\" json.encode}")
+;;                 "imports"))))
 
-  (t/is (= {"imports" #{},
-            "vocabulary" {"•lib1/inc" [1], "•foo" ["•lib2/inc"]},
-            "body" ["•lib1/inc"]}
-           (human/parse
-            "#use [[lib1 refer [inc]]]
-             #def foo [#use [[lib2 refer [inc]]] inc]
-             inc"
-            {:fs (human/in-memory-fs {"lib1" "#def inc [1]"
-                                      "lib2" "#def inc [2]"})}))))
+;; (t/deftest uses
+;;   (t/is (= ["•utils/incrementer/inc"
+;;             "•utils/incrementer/inc"
+;;             "•utils/incrementer/inc"]
+;;            (get (human/parse
+;;                  "#use [utils/incrementer [utils/incrementer as incr refer all]]
+;;                   utils/incrementer/inc incr/inc inc"
+;;                  {:fs (human/in-memory-fs {"utils/incrementer" "#def inc [1 +]"})})
+;;                 "body")))
 
-(t/deftest custom-pragmas
-  (t/testing "default"
-    (t/is (= [["foo" "bar"] "•template"]
-             (body-parse "#template [foo bar]")))))
+;;   (t/is (= {"imports" #{},
+;;             "vocabulary" {"•lib1/inc" [1], "•foo" ["•lib2/inc"]},
+;;             "body" ["•lib1/inc"]}
+;;            (human/parse
+;;             "#use [[lib1 refer [inc]]]
+;;              #def foo [#use [[lib2 refer [inc]]] inc]
+;;              inc"
+;;             {:fs (human/in-memory-fs {"lib1" "#def inc [1]"
+;;                                       "lib2" "#def inc [2]"})}))))
+
+;; (t/deftest custom-pragmas
+;;   (t/testing "default"
+;;     (t/is (= [["foo" "bar"] "•template"]
+;;              (body-parse "#template [foo bar]")))))
