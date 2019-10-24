@@ -81,6 +81,12 @@
                      (let [f (dsl.shuffle/compile spec {:referse? true})]
                        (fn [s] (update s :stack f))))})
 
+(defmethod special-form (word "clj") [_ definitions]
+  {:consume 2
+   :implementation (fn [arity fn]
+                     (let [f (eval (edn/read-string fn))]
+                       (f-caller f arity)))})
+
 (defprotocol Executable
   (exec [this state]))
 

@@ -66,6 +66,12 @@
 
           [1 2 3] [1 +] map))))
 
+(deftest clj
+  (is (= [10]
+         (main-run
+          2 3 :clj [a b] (* (+ a b) 2)))))
+
+
 ;; (t/deftest vocabulary
 ;;   (t/is (= {"•inc" [1 "•+"]
 ;;             "•dec" [1 "•-"]}

@@ -28,7 +28,7 @@
               (assert (contains? env word) (str "Unknown word " word)))]
     (jj/word (str s))))
 
-(declare parse)
+(declare parse parse-seq)
 
 (defmulti parser (fn [{:keys [state]} term] state))
 
@@ -45,7 +45,7 @@
                        :else (syntax-error "Unsupported type of object field" k))
                      (parse-value s v)])
                   (into {}))
-    (sequential? v) (mapv (partial parse-value s) v)
+    (sequential? v) (:body (parse-seq s v))
     (or (string? v)
         (number? v)
         (boolean? v)
@@ -224,6 +224,22 @@
     (-> ctx
         (assoc :state :defclj-body)
         (assoc-in [:def "bindings"] expr))))
+
+(defmethod parser :clj-body
+  [ctx expr]
+  (let [def (:def ctx)
+        bindings (get def "bindings")
+        _ (assert (not (contains? (set bindings) '&)))]
+    (-> ctx
+        (dissoc :def)
+        (assoc :state :consume)
+        (update :body conj (count bindings) (pr-str (list 'fn bindings expr)) (jj/word "clj")))))
+
+(defmethod parser :clj
+  [ctx expr]
+  (-> ctx
+      (assoc :state :clj-body)
+      (assoc-in [:def "bindings"] expr)))
 
 (defmethod parser :declare
   [ctx expr]
