@@ -28,7 +28,7 @@
               (assert (contains? env word) (str "Unknown word " word)))]
     (jj/word (str s))))
 
-(declare analyze)
+(declare parse)
 
 (defmulti parser (fn [{:keys [state]} term] state))
 
@@ -58,17 +58,15 @@
     (keyword? term) (assoc s :state term)
     :else (update s :body #(conj % (parse-value s term)))))
 
-(defn load-lib [{:keys [fs libs-cache]} ns]
+(defn load-lib [{:keys [fs libs-cache] :as s} ns]
   (if-let [lib (get @libs-cache ns)]
     lib
     (let [content (read-ns fs ns)
           _ (assert content (str "Unknown lib by ns " ns))]
-      (let [res (analyze {:fs fs
-                          :libs-cache libs-cache
-                          :state :consume
-                          :ns ns
-                          :imports #{}}
-                         (read content))]
+      (let [res (parse content
+                       {:fs fs
+                        :libs-cache libs-cache
+                        :ns ns})]
         (swap! libs-cache assoc ns res)
         res))))
 
@@ -90,14 +88,14 @@
                   (get options "as")
                   (into
                    (for [[w d] definitions]
-                     [(symbol (name (get options "as")) (get d "name"))
+                     [(symbol (name (get options "as")) (name w))
                       w]))
 
                   (get options "refer")
                   (into
-                   (if (= (get options "refer") 'all)
+                   (if (= (get options "refer") :all)
                      (for [[w d] definitions]
-                       [(symbol (get d "name")) w])
+                       [(symbol (name w)) w])
                      (for [w (get options "refer")
                            :let [target (symbol (name ns) (name w))]]
                        (do (assert (get definitions target) (str "Unknown word " w " in library " ns))
@@ -147,6 +145,7 @@
                 ;; FIXME do not allow imports / defs inside body def
                 "body" (:body ctx'')}]
       (-> ctx''
+          (assoc :env (:env ctx'))
           (assoc :body (:body ctx))
           (assoc-in [:definitions sym] def')))))
 
@@ -262,10 +261,18 @@
         (update :env merge envs))))
 
 (defn analyze
-  ([body] (analyze body {:env {}
-                         :ns 'main
-                         :definitions {}}))
-  ([body ctx] (parse-seq ctx body)))
+  [body ctx] (parse-seq ctx body))
+
+(defn parse
+  ([body] (parse body {}))
+  ([body opts]
+   (-> body
+       (read)
+       (analyze (merge {:env {}
+                        :ns 'main
+                        :definitions {}
+                        :libs-cache (atom {})}
+                       opts)))))
 
 (defn to-core [{:keys [body definitions]}]
   {"definitions" (ut/map-keys str definitions)

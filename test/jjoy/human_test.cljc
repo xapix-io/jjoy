@@ -4,14 +4,20 @@
    [jjoy.core :as jj]
    [jjoy.human :as human]))
 
+(defn to-core [program options]
+  (-> program
+      (human/parse options)
+      (human/to-core)))
+
 (defn main-run* [program]
   (-> program
-      (human/read)
-      (human/analyze)
-      (human/to-core)
+      (to-core {})
       (jj/load-program)
       (jj/run)
       (get-in [:threads 0 :stack])))
+
+(defmacro h [& forms]
+  (apply pr-str forms))
 
 (defmacro main-run [& forms]
   `(main-run* ~(apply pr-str forms)))
@@ -19,7 +25,7 @@
 (deftest basic
   (is (= [[3] 1 2] (main-run 2 1 [3]))))
 
-(deftest clj
+(deftest defclj
   (is (= [3]
          (main-run
           :defclj + [a b] (+ a b)
@@ -74,27 +80,26 @@
 ;;            (get (human/parse "#import {\"codecs/json.encode/2\" json.encode}")
 ;;                 "imports"))))
 
-;; (t/deftest uses
-;;   (t/is (= ["•utils/incrementer/inc"
-;;             "•utils/incrementer/inc"
-;;             "•utils/incrementer/inc"]
-;;            (get (human/parse
-;;                  "#use [utils/incrementer [utils/incrementer as incr refer all]]
-;;                   utils/incrementer/inc incr/inc inc"
-;;                  {:fs (human/in-memory-fs {"utils/incrementer" "#def inc [1 +]"})})
-;;                 "body")))
+(deftest uses
+  (is (= ["•utils.numbers/one"
+          "•utils.numbers/one"
+          "•utils.numbers/one"]
+         (get (to-core
+               (h
+                :use [utils.numbers [utils.numbers :as numbers :refer :all]]
+                utils.numbers/one numbers/one one)
+               {:fs (human/in-memory-fs {'utils.numbers ":def one [1]"})})
+              "body")))
 
-;;   (t/is (= {"imports" #{},
-;;             "vocabulary" {"•lib1/inc" [1], "•foo" ["•lib2/inc"]},
-;;             "body" ["•lib1/inc"]}
-;;            (human/parse
-;;             "#use [[lib1 refer [inc]]]
-;;              #def foo [#use [[lib2 refer [inc]]] inc]
-;;              inc"
-;;             {:fs (human/in-memory-fs {"lib1" "#def inc [1]"
-;;                                       "lib2" "#def inc [2]"})}))))
-
-;; (t/deftest custom-pragmas
-;;   (t/testing "default"
-;;     (t/is (= [["foo" "bar"] "•template"]
-;;              (body-parse "#template [foo bar]")))))
+  (is (= {"definitions"
+          {"lib1/inc" {"type" "words", "body" [1]},
+           "lib2/inc" {"type" "words", "body" [2]},
+           "main/foo" {"type" "words", "body" ["•lib2/inc"]}},
+          "body" ["•lib1/inc"]}
+         (to-core
+          (h
+           :use [[lib1 :refer [inc]]]
+           :def foo [:use [[lib2 :refer [inc]]] inc]
+           inc)
+          {:fs (human/in-memory-fs {'lib1 ":def inc [1]"
+                                    'lib2 ":def inc [2]"})}))))
