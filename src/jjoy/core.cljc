@@ -19,6 +19,8 @@
 
 (def ^:dynamic *current-thread*)
 
+(defn current-thread [] *current-thread*)
+
 (defn no-implementation [& _]
   (assert false))
 
@@ -80,6 +82,12 @@
    :implementation (fn [spec]
                      (let [f (dsl.shuffle/compile spec {:referse? true})]
                        (fn [s] (update s :stack f))))})
+
+(defmethod special-form (word "template") [_ definitions]
+  {:consume 1
+   :implementation (fn [spec]
+                     (let [f (dsl.template/compile spec)]
+                       (f-caller f 1)))})
 
 (defmethod special-form (word "clj") [_ definitions]
   {:consume 2
@@ -195,7 +203,7 @@
 (defn load-program
   [{:strs [definitions body]}]
   (let [memory {:definitions (atom {})
-               :execs (atom {})}
+                :execs (atom {})}
         body' (load-seq () body memory)]
     (doseq [[name spec] definitions
             :let [def (get-def-container (:definitions memory) (word name))]]
@@ -298,8 +306,8 @@
                      (assoc :thread-id thread-id))))
 
         (recur (if (satisfies? Executable term)
-                 (update-in state' [:threads thread-id]
-                            #(exec term %))
+                 (binding [*current-thread* thread-id]
+                   (update-in state' [:threads thread-id] #(exec term %)))
                  (update-in state' [:threads thread-id :stack]
                             #(cons term %))))))
     (dissoc state :thread-id)))
@@ -314,36 +322,36 @@
      (tick state))))
 
 (defn dump-thread [{:keys [stack r-stack]}]
-    {"stack" (dump-seq stack)
-     "r-stack" (dump-seq r-stack)})
+  {"stack" (dump-seq stack)
+   "r-stack" (dump-seq r-stack)})
 
 ;; if we introduce References GC should be here
 (defn dump-state [{:keys [thread-id next-thread-id threads results]}]
-    {"next-thread-id" next-thread-id
-     "threads" (->> (for [[k v] threads]
-                      [(str k) (dump-thread v)])
-                    (into {}))})
+  {"next-thread-id" next-thread-id
+   "threads" (->> (for [[k v] threads]
+                    [(str k) (dump-thread v)])
+                  (into {}))})
 
 (defn load-thread [memory {:strs [stack r-stack]}]
   {:stack (seq (load-seq () stack memory))
    :r-stack (seq (load-seq () r-stack memory))})
 
 (defn load-state [{:keys [memory]} {:strs [next-thread-id threads]}]
-    {:next-thread-id next-thread-id
-     :threads (->> (for [[k v] threads]
-                     [(edn/read-string k) (load-thread memory v)])
-                   (into {}))})
+  {:next-thread-id next-thread-id
+   :threads (->> (for [[k v] threads]
+                   [(edn/read-string k) (load-thread memory v)])
+                 (into {}))})
 
 (defn running? [{:keys [threads]}]
   (< 0 (count threads)))
 
 (defn unpark [program state thread-id prepend-stack]
-    (if (get-in state [:threads thread-id])
-      (let [state' (-> state
-                       (update-in [:threads thread-id :stack] #(concat prepend-stack %))
-                       (assoc :thread-id thread-id))]
-        (tick state'))
-      (throw (ex-info "Unknown thread" {:type ::unknown-thread}))))
+  (if (get-in state [:threads thread-id])
+    (let [state' (-> state
+                     (update-in [:threads thread-id :stack] #(concat prepend-stack %))
+                     (assoc :thread-id thread-id))]
+      (tick state'))
+    (throw (ex-info "Unknown thread" {:type ::unknown-thread}))))
 
 (comment
   get-vehicles = { url "http://samples-dev.ix-io.net/api/vehicles", method "get" }

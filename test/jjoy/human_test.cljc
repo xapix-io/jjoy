@@ -71,21 +71,6 @@
          (main-run
           2 3 :clj [a b] (* (+ a b) 2)))))
 
-
-;; (t/deftest vocabulary
-;;   (t/is (= {"•inc" [1 "•+"]
-;;             "•dec" [1 "•-"]}
-;;            (get (human/parse "#def inc [1 +] #def dec [1 -]") "vocabulary"))))
-
-;; (t/deftest imports
-;;   (t/is (= #{{"word" "•json.encode",
-;;               "imported-word" "•_imports/codecs/json.encode/2",
-;;               "alias" "codecs",
-;;               "function" "json.encode",
-;;               "arity" 2}}
-;;            (get (human/parse "#import {\"codecs/json.encode/2\" json.encode}")
-;;                 "imports"))))
-
 (deftest uses
   (is (= ["•utils.numbers/one"
           "•utils.numbers/one"
@@ -109,3 +94,15 @@
            inc)
           {:fs (human/in-memory-fs {'lib1 ":def inc [1]"
                                     'lib2 ":def inc [2]"})}))))
+
+(deftest default-keywords
+  (is (= ["body" "•query"]
+         (-> (h :query body)
+             (to-core {})
+             (get "body")))))
+
+(deftest special-words
+  (is (= ["•yield"]
+         (-> (h yield)
+             (to-core {})
+             (get "body")))))

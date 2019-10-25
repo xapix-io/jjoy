@@ -158,7 +158,16 @@
         res (jj/unpark program state 0 [2])
         res+serialization (jj/load-state program (jj/dump-state (jj/unpark program state 0 [2])))]
     (is (= {:next-thread-id 1, :threads {0 {:stack [5], :r-stack nil}}}
-           res res+serialization))))
+           res res+serialization)))
+
+  (testing "special words"
+    (let [program (jj/load-program
+                   {"body" [(jj/word "yield") {"value" ["."]} (jj/word "template")]})
+          state (jj/run program)
+          res (jj/unpark program state 0 ["hello"])
+          res+serialization (jj/load-state program (jj/dump-state (jj/unpark program state 0 [2])))]
+      (is (= {:next-thread-id 1, :threads {0 {:stack [{"value" "hello"}], :r-stack nil}}}
+             res res+serialization)))))
 
 #_(deftest query
     (let [program (jj/jsonify+load

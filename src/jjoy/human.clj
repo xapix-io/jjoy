@@ -23,8 +23,14 @@
                 (cons v (f))))]
       (f))))
 
+(def special-words  (->> jj/control-words
+                         (keys)
+                         (map (comp symbol jj/unword))
+                         (set)))
+
 (defn resolve-word [{:keys [env]} word]
   (let [s (or (get-in env [word :fully-qualified])
+              (special-words word)
               (assert (contains? env word) (str "Unknown word " word)))]
     (jj/word (str s))))
 
@@ -37,7 +43,9 @@
 
 (defn parse-value [{:keys [env] :as s} v]
   (cond
-    (symbol? v) (resolve-word s v)
+    (symbol? v) (if (:stringify-symbols s)
+                  (str v)
+                  (resolve-word s v))
     (map? v) (->> (for [[k v] v]
                     [(cond
                        (string? k) k
@@ -56,7 +64,14 @@
   [s term]
   (cond
     (keyword? term) (assoc s :state term)
-    :else (update s :body #(conj % (parse-value s term)))))
+    :else (update s :body #(conj % (parse-value s
+                                                term)))))
+
+(defmethod parser :default
+  [s term]
+  (-> s
+      (assoc :state :consume)
+      (update :body #(conj % (parse-value (assoc s :stringify-symbols true) term) (jj/word (name (:state s)))))))
 
 (defn load-lib [{:keys [fs libs-cache] :as s} ns]
   (if-let [lib (get @libs-cache ns)]
