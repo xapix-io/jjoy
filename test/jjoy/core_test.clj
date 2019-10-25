@@ -165,18 +165,16 @@
                    {"body" [(jj/word "yield") {"value" ["."]} (jj/word "template")]})
           state (jj/run program)
           res (jj/unpark program state 0 ["hello"])
-          res+serialization (jj/load-state program (jj/dump-state (jj/unpark program state 0 [2])))]
+          res+serialization (jj/load-state program (jj/dump-state (jj/unpark program state 0 ["hello"])))]
       (is (= {:next-thread-id 1, :threads {0 {:stack [{"value" "hello"}], :r-stack nil}}}
              res res+serialization)))))
 
-#_(deftest query
-    (let [program (jj/jsonify+load
-                   '{:body ({:foo 1} "foo" query)})]
+(deftest query
+  (let [program {"body" [{"foo" 1} "foo" (jj/word "query")]}]
       (is (match? [1]
                   (main-run program)))))
 
-#_(deftest template
-    (let [program (jj/jsonify+load
-                   '{:body ({:foo 1} {:bar [".foo"]} template)})]
+(deftest template
+  (let [program {"body" [{"foo" 1} {"bar" [".foo"]} (jj/word "template")]}]
       (is (match? [{"bar" 1}]
                   (main-run program)))))
