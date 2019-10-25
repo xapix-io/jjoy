@@ -17,10 +17,11 @@
 (defn read [s]
   (let [reader (PushbackReader. (StringReader. s))]
     (letfn [(f []
-              (when-let [v (edn/read {:eof nil
+              (let [v (edn/read {:eof ::end
                                       :readers {'word (fn [x] {::word x})}}
-                                     reader)]
-                (cons v (f))))]
+                                reader)]
+                (when-not (= ::end v)
+                  (cons v (f)))))]
       (f))))
 
 (def special-words  (->> jj/control-words
