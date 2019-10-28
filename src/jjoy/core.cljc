@@ -87,7 +87,7 @@
   {:consume 1
    :implementation (fn [spec]
                      (let [f (dsl.template/compile spec)]
-                       (fn [{:keys [_ & stack' :as stack] :as s}]
+                       (fn [{[_ & stack' :as stack] :stack :as s}]
                          (let [res (f stack)]
                            (assoc s :stack (cons res stack'))))))})
 

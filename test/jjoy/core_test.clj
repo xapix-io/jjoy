@@ -171,10 +171,10 @@
 
 (deftest query
   (let [program {"body" [{"foo" 1} "foo" (jj/word "query")]}]
-      (is (match? [1]
-                  (main-run program)))))
+    (is (match? [1]
+                (main-run program)))))
 
 (deftest template
-  (let [program {"body" [{"foo" 1} {"bar" [".foo"]} (jj/word "template")]}]
-      (is (match? [{"bar" 1}]
-                  (main-run program)))))
+  (let [program {"body" ["tail" {"foo" 1} {"bar" [".foo"]} (jj/word "template")]}]
+    (is (= [{"bar" 1} "tail"]
+           (main-run program)))))
