@@ -117,13 +117,13 @@
 
 (deftest spawn+consume
   (let [program {"definitions"
-         {"+" {"type" "ff"
-               "name" "clojure.core/+"
-               "arity" 2}
-          "incrementer"
-          {"type" "words"
-           "body" [[1 (jj/word "+")] (jj/word "spawn")]}}
-         "body" [[3] (jj/word "incrementer") "a-[a]" (jj/word "shuffle") (jj/word "consume")]}]
+                 {"+" {"type" "ff"
+                       "name" "clojure.core/+"
+                       "arity" 2}
+                  "incrementer"
+                  {"type" "words"
+                   "body" [[1 (jj/word "+")] (jj/word "spawn")]}}
+                 "body" [[3] (jj/word "incrementer") "a-[a]" (jj/word "shuffle") (jj/word "consume")]}]
     (is (= [1 [4]]
            (main-run program))))
 
