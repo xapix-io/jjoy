@@ -3,5 +3,7 @@
         org.clojure/tools.reader {:git/url "https://github.com/xapix-io/tools.reader.git"
                                   :sha "ac0293e481cdab50c6e460064e782fd547b2e57d"}}
  :aliases
- {:test {:extra-paths ["test/src" "test/resources"]
-         :extra-deps {nubank/matcher-combinators {:mvn/version "0.6.1"}}}}}
+ {:test {:extra-paths ["test"]
+         :extra-deps {nubank/matcher-combinators {:mvn/version "0.6.1"}}}
+  :kaocha {:extra-deps {lambdaisland/kaocha {:mvn/version "0.0-554" :exclusions [org.clojure/tools.reader]}}
+           :main-opts ["-m" "kaocha.runner"]}}}

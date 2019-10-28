@@ -39,12 +39,12 @@
 
 (declare parse parse-seq)
 
-(defmulti parser (fn [{:keys [state]} term] state))
+(defmulti parser (fn [{:keys [state]} _term] state))
 
 (defn syntax-error [& args]
   (throw (Exception. (str "Syntax error: " (pr-str args)))))
 
-(defn parse-value [{:keys [env] :as s} v]
+(defn parse-value [{:keys [_env] :as s} v]
   (cond
     (symbol? v) (if (:stringify-symbols s)
                   (str v)
@@ -76,17 +76,17 @@
       (assoc :state :consume)
       (update :body #(conj % (parse-value (assoc s :stringify-symbols true) term) (jj/word (name (:state s)))))))
 
-(defn load-lib [{:keys [fs libs-cache] :as s} ns]
+(defn load-lib [{:keys [fs libs-cache] :as _s} ns]
   (if-let [lib (get @libs-cache ns)]
     lib
     (let [content (read-ns fs ns)
-          _ (assert content (str "Unknown lib by ns " ns))]
-      (let [res (parse content
-                       {:fs fs
-                        :libs-cache libs-cache
-                        :ns ns})]
-        (swap! libs-cache assoc ns res)
-        res))))
+          _ (assert content (str "Unknown lib by ns " ns))
+          res (parse content
+                     {:fs fs
+                      :libs-cache libs-cache
+                      :ns ns})]
+      (swap! libs-cache assoc ns res)
+      res)))
 
 (defn parser-use [ctx spec]
   (let [[ns options]
@@ -100,19 +100,19 @@
              (into {} (map (fn [[k v]] [(name k) v])
                            (partition 2 args)))]))
 
-        {:keys [definitions] :as lib} (load-lib ctx ns)
+        {:keys [definitions] :as _lib} (load-lib ctx ns)
         mapping (cond->
                     {}
                   (get options "as")
                   (into
-                   (for [[w d] definitions]
+                   (for [[w _d] definitions]
                      [(symbol (name (get options "as")) (name w))
                       w]))
 
                   (get options "refer")
                   (into
                    (if (= (get options "refer") :all)
-                     (for [[w d] definitions]
+                     (for [[w _d] definitions]
                        [(symbol (name w)) w])
                      (for [w (get options "refer")
                            :let [target (symbol (name ns) (name w))]]

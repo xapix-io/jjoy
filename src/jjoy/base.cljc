@@ -111,8 +111,7 @@
 
     (word? term)
     (if-let [d (get *vocabulary* term)]
-      (do
-        (d (assoc s :p-stack p-stack)))
+      (d (assoc s :p-stack p-stack))
       (throw (ex-info (str "Unknown word " term) {:type ::unknown-word
                                                   :word term})))
 

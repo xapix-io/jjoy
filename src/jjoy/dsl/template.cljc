@@ -18,7 +18,7 @@
 
 (declare compile)
 
-(defmulti compile-op (fn [op args] op))
+(defmulti compile-op (fn [op _args] op))
 
 (defmethod compile-op "format" [_ [format-string & queries]]
   (let [format-queries (mapv query/compile queries)]
@@ -73,7 +73,7 @@
     (let [[op & args] template]
       (cond
         (= \. (nth op 0)) (compile-query (subs op 1))
-        (= \^ (nth op 0)) (let [[_ parents query] (re-find #"(\^+)(.+)" op)
+        (= \^ (nth op 0)) (let [[_ parents _query] (re-find #"(\^+)(.+)" op)
                                 n (count parents)]
                             (compile-parent-query n (subs op n)))
         :else (compile-op op args)))

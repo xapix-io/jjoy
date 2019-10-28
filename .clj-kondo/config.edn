@@ -1,0 +1,6 @@
+{:linters {:unresolved-symbol {:exclude [(jjoy.human-test/main-run)
+                                         (jjoy.human-test/h)]}}
+ :lint-as {jjoy.base/binary-op clojure.core/fn
+           jjoy.base/ternary-op clojure.core/fn
+           jjoy.base/unary-op clojure.core/fn
+           jjoy.utils/for-map clojure.core/for}}

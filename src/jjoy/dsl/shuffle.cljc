@@ -28,16 +28,15 @@
     (let [set-binding (fn [path]
                         (let [[_ binding] el]
                           (when (get bindings-map binding)
-                            (throw (ex-info (str "Duplicate binding " binding {:binding binding}))))
+                            (throw (ex-info (str "Duplicate binding " binding) {:binding binding})))
                           (assoc bindings-map binding path)))
           [t & args] el]
       (case t
         :BINDING
-        (let [[binding] args]
-          (recur (assoc acc
-                        :bindings-map (set-binding path)
-                        :path (update path (dec (count path)) inc))
-                 elements))
+        (recur (assoc acc
+                      :bindings-map (set-binding path)
+                      :path (update path (dec (count path)) inc))
+               elements)
         :LHSNESTED
         (recur (assoc (compile-lhs (update acc :path conj 0) args)
                       :path (update path (dec (count path)) inc))

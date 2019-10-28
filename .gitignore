@@ -1,3 +1,4 @@
 .cpcache/
+.clj-kondo/.cache/
 .nrepl-port
 **/.DS_Store
