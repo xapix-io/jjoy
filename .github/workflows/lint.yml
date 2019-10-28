@@ -9,4 +9,4 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Run clj-kondo
-      run: clj-kondo --lint src test/src --config .clj-kondo/config.edn
+      run: clj-kondo --lint src test --config .clj-kondo/config.edn
