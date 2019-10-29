@@ -80,7 +80,7 @@
 (defmethod special-form (word "shuffle") [_ _definitions]
   {:consume 1
    :implementation (fn [spec]
-                     (let [f (dsl.shuffle/compile spec {:referse? true})]
+                     (let [f (dsl.shuffle/compile spec {:reverse? true})]
                        (fn [s] (update s :stack f))))})
 
 (defmethod special-form (word "template") [_ _definitions]
