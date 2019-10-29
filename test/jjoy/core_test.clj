@@ -173,7 +173,7 @@
     (is (= [1]
            (main-run program)))))
 
-(deftest shuffle
+(deftest shuffle-test
   (let [program {"body" ["a" "b" 1 2 3 "abc-cb" (jj/word "shuffle")]}]
     (is (= [2 3 "b" "a"]
            (main-run program)))))
