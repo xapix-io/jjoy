@@ -59,7 +59,7 @@
 
 (defmethod compile-op "merge" [_ sub-templates]
   (let [sub-templates' (map compile sub-templates)]
-    (fn [[data]]
+    (fn [data]
       (reduce #(ut/deep-merge %1 (%2 data)) {} sub-templates'))))
 
 (defn compile [template]

@@ -56,6 +56,14 @@
       ["call" 2 1 (base/word "+")]
       3)))
 
+(t/deftest deeper-stack
+  (let [data [{"a" 1} {"b" 2} {"c" 3}]]
+    (t/are [template res] (= res
+                             ((template/compile template) data))
+      [".a"] 1
+      ["^b"] 2
+      ["^^."] {"c" 3})))
+
 ;; TODO
 (comment
   ;; two form query
