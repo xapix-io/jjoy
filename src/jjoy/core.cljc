@@ -65,25 +65,25 @@
       (swap! execs assoc word x)
       x)))
 
-(defmulti special-form (fn [word definitions] word))
+(defmulti special-form (fn [word _definitions] word))
 (defmethod special-form :default [word definitions]
   (let [def (get-def-container definitions word)]
     {:consume 0
      :implementation (fn [s] (@def s))}))
 
-(defmethod special-form (word "query") [_ definitions]
+(defmethod special-form (word "query") [_ _definitions]
   {:consume 1
    :implementation (fn [query]
                      (let [f (dsl.query/compile query)]
                        (f-caller f 1)))})
 
-(defmethod special-form (word "shuffle") [_ definitions]
+(defmethod special-form (word "shuffle") [_ _definitions]
   {:consume 1
    :implementation (fn [spec]
                      (let [f (dsl.shuffle/compile spec {:referse? true})]
                        (fn [s] (update s :stack f))))})
 
-(defmethod special-form (word "template") [_ definitions]
+(defmethod special-form (word "template") [_ _definitions]
   {:consume 1
    :implementation (fn [spec]
                      (let [f (dsl.template/compile spec)]
@@ -91,7 +91,7 @@
                          (let [res (f stack)]
                            (assoc s :stack (cons res stack'))))))})
 
-(defmethod special-form (word "clj") [_ definitions]
+(defmethod special-form (word "clj") [_ _definitions]
   {:consume 2
    :implementation (fn [arity fn]
                      (let [f (eval (edn/read-string fn))]
@@ -170,7 +170,7 @@
                     [(dump-json v)]))
           seq))
 
-(defmulti compile-definition (fn [s memory] (get s "type")))
+(defmulti compile-definition (fn [s _memory] (get s "type")))
 
 (def ^:dynamic *memory*)
 
@@ -272,7 +272,7 @@
         ;;                 :thread-id thread-id)))
 
         :consume
-        (let [[consume-thread-ids & stack] stack]
+        (let [[consume-thread-ids & _stack] stack]
           (prn "--CONSUME FROM THREADS" thread-id {:joined-to consume-thread-ids})
           (reduce (fn [state consume-id]
                     (let [thread (get-in state [:threads consume-id])]
@@ -328,7 +328,7 @@
    "r-stack" (dump-seq r-stack)})
 
 ;; if we introduce References GC should be here
-(defn dump-state [{:keys [thread-id next-thread-id threads results]}]
+(defn dump-state [{:keys [_thread-id next-thread-id threads _results]}]
   {"next-thread-id" next-thread-id
    "threads" (->> (for [[k v] threads]
                     [(str k) (dump-thread v)])
@@ -347,7 +347,7 @@
 (defn running? [{:keys [threads]}]
   (< 0 (count threads)))
 
-(defn unpark [program state thread-id prepend-stack]
+(defn unpark [_program state thread-id prepend-stack]
   (if (get-in state [:threads thread-id])
     (let [state' (-> state
                      (update-in [:threads thread-id :stack] #(concat prepend-stack %))
@@ -356,14 +356,14 @@
     (throw (ex-info "Unknown thread" {:type ::unknown-thread}))))
 
 (comment
-  get-vehicles = { url "http://samples-dev.ix-io.net/api/vehicles", method "get" }
-  http-request "body" get
-  get-user = "http://samples-dev.ix-io.net/api/users/"
-  "ab-[ba]" shuffle str.join
-  "url" swap { method "get" } assoc
-  http-request "body" get
+  ;; get-vehicles = { url "http://samples-dev.ix-io.net/api/vehicles", method "get" }
+  ;; http-request "body" get
+  ;; get-user = "http://samples-dev.ix-io.net/api/users/"
+  ;; "ab-[ba]" shuffle str.join
+  ;; "url" swap { method "get" } assoc
+  ;; http-request "body" get
 
-  get-vehicles {data {* {user-id ""}}} jolt.shift [get-user] map
+  ;; get-vehicles {data {* {user-id ""}}} jolt.shift [get-user] map
 
-  get-
+  ;; get-
   )

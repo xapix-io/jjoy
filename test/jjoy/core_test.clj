@@ -1,9 +1,8 @@
 (ns jjoy.core-test
   (:require [jjoy.core :as jj]
-            [clojure.test :refer [deftest is are testing]]))
+            [clojure.test :refer [deftest is testing]]))
 
 (require 'matcher-combinators.test)
-(require 'jjoy.test-utils)
 
 (defn main-run [program]
   (get-in (-> program

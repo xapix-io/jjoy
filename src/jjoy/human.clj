@@ -1,6 +1,7 @@
 (ns jjoy.human
   (:refer-clojure :exclude [read])
-  (:require [clojure.edn :as edn]
+  (:require [clojure.tools.reader.edn :as edn]
+            [clojure.tools.reader.reader-types :refer [indexing-push-back-reader]]
             [clojure.string :as str]
             [clojure.walk :as walk]
             [jjoy.core :as jj]
@@ -15,10 +16,11 @@
     (read-ns [_ ns] (get m ns))))
 
 (defn read [s]
-  (let [reader (PushbackReader. (StringReader. s))]
+  (let [reader (indexing-push-back-reader s)]
     (letfn [(f []
               (let [v (edn/read {:eof ::end
-                                      :readers {'word (fn [x] {::word x})}}
+                                 :source-position true
+                                 :readers {'word (fn [x] {::word x})}}
                                 reader)]
                 (when-not (= ::end v)
                   (cons v (f)))))]
@@ -37,12 +39,12 @@
 
 (declare parse parse-seq)
 
-(defmulti parser (fn [{:keys [state]} term] state))
+(defmulti parser (fn [{:keys [state]} _term] state))
 
 (defn syntax-error [& args]
   (throw (Exception. (str "Syntax error: " (pr-str args)))))
 
-(defn parse-value [{:keys [env] :as s} v]
+(defn parse-value [{:keys [_env] :as s} v]
   (cond
     (symbol? v) (if (:stringify-symbols s)
                   (str v)
@@ -74,17 +76,17 @@
       (assoc :state :consume)
       (update :body #(conj % (parse-value (assoc s :stringify-symbols true) term) (jj/word (name (:state s)))))))
 
-(defn load-lib [{:keys [fs libs-cache] :as s} ns]
+(defn load-lib [{:keys [fs libs-cache] :as _s} ns]
   (if-let [lib (get @libs-cache ns)]
     lib
     (let [content (read-ns fs ns)
-          _ (assert content (str "Unknown lib by ns " ns))]
-      (let [res (parse content
-                       {:fs fs
-                        :libs-cache libs-cache
-                        :ns ns})]
-        (swap! libs-cache assoc ns res)
-        res))))
+          _ (assert content (str "Unknown lib by ns " ns))
+          res (parse content
+                     {:fs fs
+                      :libs-cache libs-cache
+                      :ns ns})]
+      (swap! libs-cache assoc ns res)
+      res)))
 
 (defn parser-use [ctx spec]
   (let [[ns options]
@@ -98,19 +100,19 @@
              (into {} (map (fn [[k v]] [(name k) v])
                            (partition 2 args)))]))
 
-        {:keys [definitions] :as lib} (load-lib ctx ns)
+        {:keys [definitions] :as _lib} (load-lib ctx ns)
         mapping (cond->
                     {}
                   (get options "as")
                   (into
-                   (for [[w d] definitions]
+                   (for [[w _d] definitions]
                      [(symbol (name (get options "as")) (name w))
                       w]))
 
                   (get options "refer")
                   (into
                    (if (= (get options "refer") :all)
-                     (for [[w d] definitions]
+                     (for [[w _d] definitions]
                        [(symbol (name w)) w])
                      (for [w (get options "refer")
                            :let [target (symbol (name ns) (name w))]]
@@ -138,7 +140,9 @@
   [ctx expr]
   (cond
     (symbol? expr)
-    (assoc-in ctx [:def "name"] (name expr))
+    (-> ctx
+        (assoc-in [:def "name"] (name expr))
+        (assoc-in [:def "meta"] (meta expr)))
 
     (string? expr)
     (assoc-in ctx [:def "doc"] expr)
@@ -155,7 +159,8 @@
                    (assoc :body [])
                    (assoc-in [:env (symbol (get def "name"))]
                              {:type :def
-                              :fully-qualified sym}))
+                              :fully-qualified sym
+                              :source (get def "meta")}))
           ctx'' (parse-seq ctx' expr)
           def' {"type" "words"
                 ;; FIXME do not allow imports / defs inside body def
@@ -181,7 +186,8 @@
                  (assoc :body [])
                  (assoc-in [:env (symbol (get def "name"))]
                            {:type :instruction
-                            :fully-qualified sym}))
+                            :fully-qualified sym
+                            :source (get def "meta")}))
         def' {"type" "instruction"
               "fn" (pr-str (list 'fn (get def "bindings")
                                  (walk/prewalk (partial instruction-body-words ctx) expr)))}]
@@ -192,7 +198,9 @@
   [ctx expr]
   (cond
     (symbol? expr)
-    (assoc-in ctx [:def "name"] (name expr))
+    (-> ctx
+        (assoc-in [:def "name"] (name expr))
+        (assoc-in [:def "meta"] (meta expr)))
 
     (string? expr)
     (assoc-in ctx [:def "doc"] expr)
@@ -215,7 +223,8 @@
                  (assoc :body [])
                  (assoc-in [:env (symbol (get def "name"))]
                            {:type :defclj
-                            :fully-qualified sym}))
+                            :fully-qualified sym
+                            :source (get def "meta")}))
         bindings (get def "bindings")
         _ (assert (not (contains? (set bindings) '&)))
         def' {"type" "clojure"
@@ -228,7 +237,9 @@
   [ctx expr]
   (cond
     (symbol? expr)
-    (assoc-in ctx [:def "name"] (name expr))
+    (-> ctx
+        (assoc-in [:def "name"] (name expr))
+        (assoc-in [:def "meta"] (meta expr)))
 
     (string? expr)
     (assoc-in ctx [:def "doc"] expr)
@@ -284,7 +295,8 @@
                          (let [_ (assert (symbol? sym))]
                            [sym
                             {:type :import
-                             :fully-qualified (import-symbol imported-name arity)}]))
+                             :fully-qualified (import-symbol imported-name arity)
+                             :source (meta sym)}]))
                        specs)
                   (into {}))]
     (-> ctx
@@ -334,5 +346,33 @@
               :definstruction 'identity '[s] '(do s {::word into})
               :defclj 'plus '[a b] '(+ a b)
               'zwei-drei 'plus)
-      (read) (analyze) (to-core))
+      (parse))
+
+  (-> (apply pr-str
+             '(:declare map-step
+                        :definstruction map-acc
+                        [{[res & stack] :stack
+                          [acc & r-stack] :r-stack}]
+                        {:stack stack
+                         :r-stack (concat [{::word map-step} (conj acc res)] r-stack)}
+
+                        :definstruction map-step
+                        [{:keys [stack]
+                          [acc [x & source] p & r-stack] :r-stack}]
+                        (if x
+                          {:stack (cons x stack)
+                           :r-stack (concat p [{::word map-acc} acc source p] r-stack)}
+                          {:stack (cons acc stack)
+                           :r-stack r-stack})
+
+                        :definstruction map [{[p l & stack] :stack :keys [r-stack]}]
+                        {:stack stack
+                         :r-stack (concat [{::word map-step} [] l p] r-stack)}
+
+                        :import
+                        {[clojure.core/+ 2] +}
+
+                        [1 2 3] [1 +] map))
+      (parse))
+
   )

@@ -47,7 +47,7 @@
                   (if (re-find #"^_" bind)
                     (fn f
                       ([x] (f {} x))
-                      ([matches x] matches))
+                      ([matches _x] matches))
                     (fn f
                       ([x] (f {} x))
                       ([matches x]
