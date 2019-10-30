@@ -19,7 +19,6 @@
   (let [reader (indexing-push-back-reader s)]
     (letfn [(f []
               (let [v (edn/read {:eof ::end
-                                 :source-position true
                                  :readers {'word (fn [x] {::word x})}}
                                 reader)]
                 (when-not (= ::end v)
@@ -140,9 +139,7 @@
   [ctx expr]
   (cond
     (symbol? expr)
-    (-> ctx
-        (assoc-in [:def "name"] (name expr))
-        (assoc-in [:def "meta"] (meta expr)))
+    (assoc-in ctx [:def "name"] (name expr))
 
     (string? expr)
     (assoc-in ctx [:def "doc"] expr)
@@ -159,8 +156,7 @@
                    (assoc :body [])
                    (assoc-in [:env (symbol (get def "name"))]
                              {:type :def
-                              :fully-qualified sym
-                              :source (get def "meta")}))
+                              :fully-qualified sym}))
           ctx'' (parse-seq ctx' expr)
           def' {"type" "words"
                 ;; FIXME do not allow imports / defs inside body def
@@ -186,8 +182,7 @@
                  (assoc :body [])
                  (assoc-in [:env (symbol (get def "name"))]
                            {:type :instruction
-                            :fully-qualified sym
-                            :source (get def "meta")}))
+                            :fully-qualified sym}))
         def' {"type" "instruction"
               "fn" (pr-str (list 'fn (get def "bindings")
                                  (walk/prewalk (partial instruction-body-words ctx) expr)))}]
@@ -198,9 +193,7 @@
   [ctx expr]
   (cond
     (symbol? expr)
-    (-> ctx
-        (assoc-in [:def "name"] (name expr))
-        (assoc-in [:def "meta"] (meta expr)))
+    (assoc-in ctx [:def "name"] (name expr))
 
     (string? expr)
     (assoc-in ctx [:def "doc"] expr)
@@ -223,8 +216,7 @@
                  (assoc :body [])
                  (assoc-in [:env (symbol (get def "name"))]
                            {:type :defclj
-                            :fully-qualified sym
-                            :source (get def "meta")}))
+                            :fully-qualified sym}))
         bindings (get def "bindings")
         _ (assert (not (contains? (set bindings) '&)))
         def' {"type" "clojure"
@@ -237,9 +229,7 @@
   [ctx expr]
   (cond
     (symbol? expr)
-    (-> ctx
-        (assoc-in [:def "name"] (name expr))
-        (assoc-in [:def "meta"] (meta expr)))
+    (assoc-in ctx [:def "name"] (name expr))
 
     (string? expr)
     (assoc-in ctx [:def "doc"] expr)
@@ -295,8 +285,7 @@
                          (let [_ (assert (symbol? sym))]
                            [sym
                             {:type :import
-                             :fully-qualified (import-symbol imported-name arity)
-                             :source (meta sym)}]))
+                             :fully-qualified (import-symbol imported-name arity)}]))
                        specs)
                   (into {}))]
     (-> ctx

@@ -106,28 +106,3 @@
          (-> (h yield)
              (to-core {})
              (get "body")))))
-
-(deftest source-positions
-  (is (= {'zwei-drei
-          {:type :def,
-           :fully-qualified 'main/zwei-drei,
-           :source {:line 1, :column 6, :file nil, :name "zwei-drei", :ns nil}},
-          'into
-          {:type :import,
-           :fully-qualified 'jjoy.import/clojure.core.into-2,
-           :source {:line 1, :column 53, :file nil, :name "into", :ns nil}},
-          'identity
-          {:type :instruction,
-           :fully-qualified 'main/identity,
-           :source {:line 1, :column 75, :file nil, :name "identity", :ns nil}},
-          'plus
-          {:type :defclj,
-           :fully-qualified 'main/plus,
-           :source {:line 1, :column 133, :file nil, :name "plus", :ns nil}}}
-         (-> (pr-str :def 'zwei-drei [2 3]
-                     :import '{[clojure.core/into 2] into}
-                     :definstruction 'identity '[s] '(do s {::word into})
-                     :defclj 'plus '[a b] '(+ a b)
-                     'zwei-drei 'plus)
-             (human/parse)
-             :env))))
