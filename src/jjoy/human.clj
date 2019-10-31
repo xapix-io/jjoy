@@ -1,7 +1,6 @@
 (ns jjoy.human
   (:refer-clojure :exclude [read])
-  (:require [clojure.tools.reader.edn :as edn]
-            [clojure.tools.reader.reader-types :refer [indexing-push-back-reader]]
+  (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.walk :as walk]
             [jjoy.core :as jj]
@@ -16,7 +15,7 @@
     (read-ns [_ ns] (get m ns))))
 
 (defn read [s]
-  (let [reader (indexing-push-back-reader s)]
+  (let [reader (PushbackReader. (StringReader. s))]
     (letfn [(f []
               (let [v (edn/read {:eof ::end
                                  :readers {'word (fn [x] {::word x})}}
