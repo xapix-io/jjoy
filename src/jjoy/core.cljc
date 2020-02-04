@@ -47,7 +47,7 @@
   (fn [{:keys [stack] :as s}]
     (assert (<= arity (count stack)))
     (let [[args stack'] (split-at arity stack)
-          _ (prn "---F CALL" args stack)
+          ;; _ (prn "---F CALL" args stack)
           res (apply f (reverse args))]
       (assoc s :stack (cons res stack')))))
 
@@ -220,7 +220,7 @@
                  :r-stack ()})))
 
 (defn tick [{:keys [thread-id threads] :as state}]
-  (prn "---TICK" state)
+  ;; (prn "---TICK" state)
   (if-let [{[term & r-stack] :r-stack
             :keys [stack consumer]} (get threads thread-id)]
     (let [state' (assoc-in state [:threads thread-id :r-stack] r-stack)]

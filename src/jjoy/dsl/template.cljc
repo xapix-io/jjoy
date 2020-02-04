@@ -86,6 +86,14 @@
 (defn run [template data]
   (substitute (compile template) data))
 
+(run {"foo" {"bar" [".user.name"]}}
+  {"user" {"name" "Andrew"}})
+
+(run {"names" ["for" "users.name"
+               {"first-name" ["."]}]}
+  {"users" [{"name" "Andrew"}
+            {"name" "Kirill"}]})
+
 (comment
   (run {"foo" {"bar" [".user.name"]}}
     {"user" {"name" "Andrew"}})
