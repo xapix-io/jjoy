@@ -1,13 +1,8 @@
 {:paths ["src"]
- :deps {instaparse {:mvn/version "1.4.10"}
-        ;; org.clojure/tools.reader {:git/url "https://github.com/xapix-io/tools.reader.git"
-        ;;                           :sha "ac0293e481cdab50c6e460064e782fd547b2e57d"}
-        }
+ :deps {instaparse/instaparse {:mvn/version "1.4.10"}}
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps {nubank/matcher-combinators {:mvn/version "0.6.1"}}}
-  :kaocha {:extra-deps {lambdaisland/kaocha {:mvn/version "0.0-554"
-                                             ;; :exclusions [org.clojure/tools.reader]
-                                             }
+  :kaocha {:extra-deps {lambdaisland/kaocha {:mvn/version "0.0-554"}
                         lambdaisland/kaocha-cloverage {:mvn/version "0.0-41"}}
            :main-opts ["-m" "kaocha.runner"]}}}

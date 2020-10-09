@@ -7,7 +7,7 @@
 
 (defn index-key [k]
   (when (= \[ (nth k 0))
-    (Long/parseLong (subs k 1 (dec (count k))))))
+    (#?(:clj Long/parseLong :cljs js/parseInt) (subs k 1 (dec (count k))))))
 
 (defn parse [query]
   (->> (re-seq #"(([^\.\\\[]|\\[\\\.\[])+)(\[[^\]]+\])?" query)
